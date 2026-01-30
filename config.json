@@ -1,0 +1,10 @@
+{
+  "discord_token": "你的discord bot token",
+  "system_prompt": "你是Discord聊天助手，回答清晰、友好，避免重复。",
+  "openai": {
+    "api_key": "你的openai兼容key",
+    "base_url": "https://api.openai.com/v1",
+    "chat_model": "gpt-4o-mini",
+    "embed_model": "text-embedding-3-small"
+  }
+}
