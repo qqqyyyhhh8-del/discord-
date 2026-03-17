@@ -1,5 +1,7 @@
 # Discord Go Bot
 
+[简体中文](README.md) | [English](README.en.md)
+
 这是一个基于 Go + Discordgo 的聊天机器人示例，具备：
 - 基础对话能力（调用 OpenAI 格式兼容接口）
 - 自动对话摘要（防止上下文过长）
@@ -34,26 +36,18 @@
 | `BOT_CONFIG_FILE` | 运行时配置文件路径（默认 `bot_config.json`） |
 | `BOT_COMMAND_GUILD_ID` | 可选，slash 命令注册到指定 guild；不填则注册为全局命令 |
 
-## Termux 运行
-1. 安装依赖：
-   ```bash
-   pkg update
-   pkg install golang git
-   ```
-2. 拉取代码并进入目录：
+## 快速开始
+1. 拉取仓库并进入目录：
    ```bash
    git clone <你的仓库地址>
    cd discord-
    ```
-3. 创建配置文件：
+2. 创建 `.env`：
    ```bash
    cp .env.example .env
    ```
-4. 编辑 `.env`：
-   ```bash
-   nano .env
-   ```
-5. 启动：
+3. 按需编辑 `.env`。
+4. 启动：
    ```bash
    go run ./cmd/discordbot
    ```
@@ -115,4 +109,3 @@
 - `/emoji` 面板默认以 ephemeral 形式打开；只有管理员和超级管理员可以触发表情分析。
 - 如果 `/emoji` 分析时遇到超时，优先检查你的 OpenAI 兼容站点响应速度；必要时可在 `.env` 里设置 `OPENAI_HTTP_TIMEOUT_SECONDS=600`。
 - 机器人启动时会先清空当前作用域下旧的 slash commands，再批量重新注册，避免逐个删命令带来的额外请求。
-- 在 Termux 中长时间运行建议使用 `tmux`。
