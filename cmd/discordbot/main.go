@@ -12,6 +12,7 @@ import (
 	"discordbot/internal/config"
 	"discordbot/internal/memory"
 	"discordbot/internal/openai"
+	"discordbot/internal/runtimecfg"
 )
 
 func main() {
@@ -22,10 +23,18 @@ func main() {
 
 	openAI := openai.NewClient(cfg.OpenAI)
 	store := memory.NewStore(openAI.Embed)
+	runtimeStore, err := runtimecfg.Open(cfg.Bot.ConfigFilePath)
+	if err != nil {
+		log.Fatal(err)
+	}
+	var rerankFn bot.RerankFn
+	if openAI.CanRerank() {
+		rerankFn = openAI.Rerank
+	}
 
-	handler := bot.NewHandler(cfg.Bot, openAI.Chat, openAI.Embed, store)
+	handler := bot.NewHandler(cfg.Bot, openAI.Chat, openAI.Embed, rerankFn, store, runtimeStore)
 
-	session, err := bot.NewSession(cfg.Bot.DiscordToken, handler)
+	session, err := bot.NewSession(cfg.Bot.DiscordToken, cfg.Bot.CommandGuildID, handler)
 	if err != nil {
 		log.Fatal(err)
 	}
