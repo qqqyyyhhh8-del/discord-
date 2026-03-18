@@ -19,19 +19,26 @@ const (
 	MethodPluginOnResponsePostprocess = "plugin.on_response_postprocess"
 	MethodPluginOnInterval            = "plugin.on_interval"
 
-	MethodHostStorageGet      = "host.storage.get"
-	MethodHostStorageSet      = "host.storage.set"
-	MethodHostListGuildEmojis = "host.discord.list_guild_emojis"
-	MethodHostChat            = "host.chat"
-	MethodHostEmbed           = "host.embed"
-	MethodHostRerank          = "host.rerank"
-	MethodHostSendMessage     = "host.send_message"
-	MethodHostReplyToMessage  = "host.reply_to_message"
-	MethodHostSpeechAllowed   = "host.speech.allowed"
-	MethodHostGetWorldBook    = "host.worldbook.get"
-	MethodHostUpsertWorldBook = "host.worldbook.upsert"
-	MethodHostDeleteWorldBook = "host.worldbook.delete"
-	MethodHostLog             = "host.log"
+	MethodHostStorageGet       = "host.storage.get"
+	MethodHostStorageSet       = "host.storage.set"
+	MethodHostConfigGet        = "host.config.get"
+	MethodHostConfigSet        = "host.config.set"
+	MethodHostMemoryGet        = "host.memory.get"
+	MethodHostMemorySearch     = "host.memory.search"
+	MethodHostMemoryAppend     = "host.memory.append"
+	MethodHostMemorySetSummary = "host.memory.set_summary"
+	MethodHostMemoryTrim       = "host.memory.trim"
+	MethodHostListGuildEmojis  = "host.discord.list_guild_emojis"
+	MethodHostChat             = "host.chat"
+	MethodHostEmbed            = "host.embed"
+	MethodHostRerank           = "host.rerank"
+	MethodHostSendMessage      = "host.send_message"
+	MethodHostReplyToMessage   = "host.reply_to_message"
+	MethodHostSpeechAllowed    = "host.speech.allowed"
+	MethodHostGetWorldBook     = "host.worldbook.get"
+	MethodHostUpsertWorldBook  = "host.worldbook.upsert"
+	MethodHostDeleteWorldBook  = "host.worldbook.delete"
+	MethodHostLog              = "host.log"
 )
 
 type Plugin interface {
@@ -105,6 +112,66 @@ func (c *HostClient) StorageSet(ctx context.Context, key string, value any) erro
 		return err
 	}
 	return c.session.Call(ctx, MethodHostStorageSet, StorageSetRequest{Key: key, Value: payload}, nil)
+}
+
+func (c *HostClient) ConfigGet(ctx context.Context, target any) (bool, error) {
+	var response ConfigGetResponse
+	if err := c.session.Call(ctx, MethodHostConfigGet, struct{}{}, &response); err != nil {
+		return false, err
+	}
+	if !response.Found || len(response.Value) == 0 || target == nil {
+		return response.Found, nil
+	}
+	return true, json.Unmarshal(response.Value, target)
+}
+
+func (c *HostClient) ConfigSet(ctx context.Context, value any) error {
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	return c.session.Call(ctx, MethodHostConfigSet, ConfigSetRequest{Value: payload}, nil)
+}
+
+func (c *HostClient) MemoryGet(ctx context.Context, channelID string) (*MemoryGetResponse, error) {
+	var response MemoryGetResponse
+	if err := c.session.Call(ctx, MethodHostMemoryGet, MemoryGetRequest{ChannelID: channelID}, &response); err != nil {
+		return nil, err
+	}
+	return &response, nil
+}
+
+func (c *HostClient) MemorySearch(ctx context.Context, channelID, query string, topN int) ([]MemorySearchResult, error) {
+	var response MemorySearchResponse
+	if err := c.session.Call(ctx, MethodHostMemorySearch, MemorySearchRequest{
+		ChannelID: channelID,
+		Query:     query,
+		TopN:      topN,
+	}, &response); err != nil {
+		return nil, err
+	}
+	return response.Results, nil
+}
+
+func (c *HostClient) MemoryAppend(ctx context.Context, channelID string, message MemoryMessage) error {
+	return c.session.Call(ctx, MethodHostMemoryAppend, MemoryAppendRequest{
+		ChannelID: channelID,
+		Message:   message,
+	}, nil)
+}
+
+func (c *HostClient) MemorySetSummary(ctx context.Context, channelID, summary string) error {
+	return c.session.Call(ctx, MethodHostMemorySetSummary, MemorySetSummaryRequest{
+		ChannelID: channelID,
+		Summary:   summary,
+	}, nil)
+}
+
+func (c *HostClient) MemoryTrimHistory(ctx context.Context, channelID string, keep int) error {
+	return c.session.Call(ctx, MethodHostMemoryTrim, MemoryTrimRequest{
+		ChannelID: channelID,
+		Keep:      keep,
+	}, nil)
 }
 
 func (c *HostClient) Chat(ctx context.Context, messages []ChatMessage) (string, error) {

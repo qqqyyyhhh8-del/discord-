@@ -275,6 +275,24 @@ LIMIT ?
 	return results
 }
 
+func (s *Store) Search(ctx context.Context, chID, query string, k int) ([]VectorRecord, error) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return nil, nil
+	}
+	if s.embedFn == nil {
+		return nil, fmt.Errorf("memory embed function is unavailable")
+	}
+	embedding, err := s.embedFn(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	if k <= 0 {
+		k = 4
+	}
+	return s.TopKRecords(chID, embedding, k), nil
+}
+
 func (s *Store) indexMessage(ctx context.Context, chID string, record MessageRecord) {
 	if s.embedFn == nil {
 		return

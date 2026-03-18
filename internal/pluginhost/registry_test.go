@@ -76,6 +76,9 @@ func TestRegistryMigratesLegacyJSONAndPersistsToSQLite(t *testing.T) {
 	if err := registry.StorageSet("extra", "config", json.RawMessage(`{"mode":"sqlite"}`)); err != nil {
 		t.Fatalf("storage set: %v", err)
 	}
+	if err := registry.ConfigSet("extra", json.RawMessage(`{"enabled":true,"threshold":3}`)); err != nil {
+		t.Fatalf("config set: %v", err)
+	}
 	if err := registry.Close(); err != nil {
 		t.Fatalf("close registry: %v", err)
 	}
@@ -102,5 +105,12 @@ func TestRegistryMigratesLegacyJSONAndPersistsToSQLite(t *testing.T) {
 	}
 	if string(value) != `{"mode":"sqlite"}` {
 		t.Fatalf("unexpected persisted storage: %s", value)
+	}
+	configValue, ok := reopened.ConfigGet("extra")
+	if !ok {
+		t.Fatal("expected plugin config to persist in sqlite")
+	}
+	if string(configValue) != `{"enabled":true,"threshold":3}` {
+		t.Fatalf("unexpected persisted config: %s", configValue)
 	}
 }

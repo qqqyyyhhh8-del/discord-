@@ -120,6 +120,9 @@ func main() {
 常用能力对照：
 
 - `plugin.storage`：`StorageGet` / `StorageSet`
+- `plugin.config.read` / `plugin.config.write`：`ConfigGet` / `ConfigSet`
+- `memory.read`：`MemoryGet` / `MemorySearch`
+- `memory.write`：`MemoryAppend` / `MemorySetSummary` / `MemoryTrimHistory`
 - `discord.interaction.respond`：返回 Slash/按钮/Modal 响应
 - `discord.read_guild_emojis`：`ListGuildEmojis`
 - `llm.chat`：`Chat`
@@ -130,6 +133,40 @@ func main() {
 - `worldbook.read` / `worldbook.write`：`GetWorldBook` / `UpsertWorldBook` / `DeleteWorldBook`
 
 建议：只声明真正需要的 capability。宿主会按声明做权限检查。
+
+## 数据存储与数据库边界
+
+先把边界说清楚：
+
+- 插件**没有**原生 SQL 连接，也不应该直接读写宿主 SQLite。
+- 宿主会把运行时配置、聊天记忆、世界书、插件注册表和插件数据统一持久化到主 SQLite。
+- 插件能接触的数据，必须通过 `HostClient` 提供的能力接口完成。
+
+三类数据能力的定位分别是：
+
+- `plugin.storage`：插件私有 KV 状态。适合缓存、游标、任务状态、已处理 ID 等“插件内部状态”。
+- `plugin.config.read/write`：插件配置 JSON。适合管理员可调整的稳定配置，例如阈值、模式、白名单、模板文本。
+- `memory.read/write`：核心聊天记忆。适合需要读当前频道上下文，或显式追加/修剪记忆的插件。
+
+当前建议：
+
+- 想做“用户可配置项”，优先用 `plugin.config`。
+- 想做“插件运行状态”，优先用 `plugin.storage`。
+- 想影响主对话上下文，再用 `memory.write`；这个能力应该少给。
+
+关于 `plugin.config`：
+
+- `ConfigSet` 保存的是**整块 JSON 值**，不是 KV 子项。
+- `plugin.json` 里的 `config_schema` 字段现在可以作为插件自己的 schema 说明，但宿主**暂未自动校验或自动渲染配置表单**。
+- 也就是说，schema 目前是给插件作者、面板和未来扩展预留的元数据，不是强校验器。
+
+关于 `memory`：
+
+- `MemoryGet(channelID)` 返回该频道当前的摘要和最近消息。
+- `MemorySearch(channelID, query, topN)` 会走宿主已有的 embedding 检索，只查该频道已索引的记忆。
+- `MemoryAppend` 追加的是宿主核心记忆，不是插件私有日志。
+- 目前只有追加的 `user` 文本消息会进入向量索引，而且索引是异步完成的；刚 append 后立刻 search，可能会有极短延迟。
+- `MemoryTrimHistory` 主要用于修剪最近消息窗口；它不是数据库管理接口。
 
 ## 第五步：本地调试与安装
 

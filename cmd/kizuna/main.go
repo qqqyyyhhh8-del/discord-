@@ -49,6 +49,7 @@ func main() {
 		PluginsDir:                cfg.Bot.PluginsDir,
 		DB:                        db,
 		HostVersion:               buildinfo.Version,
+		MemoryStore:               store,
 		RuntimeStore:              runtimeStore,
 		ChatFn:                    openAI.Chat,
 		EmbedFn:                   openAI.Embed,

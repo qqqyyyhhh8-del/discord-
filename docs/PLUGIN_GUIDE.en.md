@@ -112,6 +112,9 @@ If you handle components, declare `component_prefixes` in `plugin.json` and keep
 Common mappings:
 
 - `plugin.storage`: `StorageGet`, `StorageSet`
+- `plugin.config.read` / `plugin.config.write`: `ConfigGet`, `ConfigSet`
+- `memory.read`: `MemoryGet`, `MemorySearch`
+- `memory.write`: `MemoryAppend`, `MemorySetSummary`, `MemoryTrimHistory`
 - `discord.read_guild_emojis`: `ListGuildEmojis`
 - `llm.chat`: `Chat`
 - `llm.embed`: `Embed`
@@ -121,6 +124,40 @@ Common mappings:
 - `worldbook.read` / `worldbook.write`: worldbook APIs
 
 Only request the capabilities you actually use.
+
+## Data Storage Boundaries
+
+The important boundary is this:
+
+- Plugins do **not** get raw SQL access to the host SQLite database.
+- The host persists runtime config, chat memory, worldbook data, plugin registry state, and plugin data in its own SQLite store.
+- Plugins must go through `HostClient` APIs for any persisted data they touch.
+
+Use each data surface for a different job:
+
+- `plugin.storage`: plugin-private KV state for cursors, cache, job state, processed IDs, and other internal state.
+- `plugin.config.read/write`: plugin configuration JSON for stable admin-controlled settings such as thresholds, modes, allowlists, and templates.
+- `memory.read/write`: core conversation memory for reading current channel context or explicitly appending / trimming memory.
+
+Recommended rule of thumb:
+
+- Use `plugin.config` for user-facing configuration.
+- Use `plugin.storage` for plugin-internal runtime state.
+- Use `memory.write` only when the plugin truly needs to influence the bot's core conversation memory.
+
+About `plugin.config`:
+
+- `ConfigSet` stores one full JSON value, not a nested KV map.
+- `config_schema` in `plugin.json` can already document your config shape, but the host does **not yet** auto-validate it or auto-render a config form.
+- For now, treat it as schema metadata for plugin authors and future tooling.
+
+About `memory`:
+
+- `MemoryGet(channelID)` returns the current summary plus recent messages for that channel.
+- `MemorySearch(channelID, query, topN)` uses the host's existing embedding retrieval and only searches indexed memory from that channel.
+- `MemoryAppend` writes into the host's core memory, not a plugin-private log.
+- At the moment, only appended `user` text messages are indexed for vector search, and indexing is asynchronous, so an immediate search right after append may have a short delay.
+- `MemoryTrimHistory` is for trimming the recent-message window, not for low-level database management.
 
 ## 5. Install and Debug
 

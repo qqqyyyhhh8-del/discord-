@@ -45,6 +45,7 @@ type InstalledPlugin struct {
 	GuildMode    string                     `json:"guild_mode,omitempty"`
 	GuildIDs     []string                   `json:"guild_ids,omitempty"`
 	LastError    string                     `json:"last_error,omitempty"`
+	Config       json.RawMessage            `json:"config,omitempty"`
 	Storage      map[string]json.RawMessage `json:"storage,omitempty"`
 }
 
@@ -278,6 +279,23 @@ func (r *Registry) StorageGet(pluginID, key string) (json.RawMessage, bool) {
 	return append(json.RawMessage(nil), value...), true
 }
 
+func (r *Registry) ConfigGet(pluginID string) (json.RawMessage, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	plugin, ok := r.data.Plugins[strings.TrimSpace(pluginID)]
+	if !ok || len(plugin.Config) == 0 {
+		return nil, false
+	}
+	return append(json.RawMessage(nil), plugin.Config...), true
+}
+
+func (r *Registry) ConfigSet(pluginID string, value json.RawMessage) error {
+	return r.mutate(pluginID, func(plugin *InstalledPlugin) {
+		plugin.Config = normalizeRawJSON(value)
+	})
+}
+
 func (r *Registry) StorageSet(pluginID, key string, value json.RawMessage) error {
 	key = strings.TrimSpace(key)
 	if key == "" {
@@ -453,6 +471,7 @@ func normalizeInstalledPlugin(plugin InstalledPlugin) InstalledPlugin {
 	plugin.GuildMode = normalizeGuildMode(plugin.GuildMode)
 	plugin.GuildIDs = normalizeStrings(plugin.GuildIDs)
 	plugin.LastError = strings.TrimSpace(plugin.LastError)
+	plugin.Config = normalizeRawJSON(plugin.Config)
 	if plugin.Storage == nil {
 		plugin.Storage = map[string]json.RawMessage{}
 	}
@@ -472,6 +491,14 @@ func normalizeInstalledPluginForDir(plugin InstalledPlugin, dir string) Installe
 		plugin.RepoDir = filepath.Join(dir, reposDirName, plugin.ID)
 	}
 	return plugin
+}
+
+func normalizeRawJSON(value json.RawMessage) json.RawMessage {
+	value = bytes.TrimSpace(value)
+	if len(value) == 0 || bytes.Equal(value, []byte("null")) {
+		return nil
+	}
+	return append(json.RawMessage(nil), value...)
 }
 
 func normalizeCapabilities(values []pluginapi.Capability) []pluginapi.Capability {

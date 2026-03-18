@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"kizuna/internal/memory"
 	"kizuna/internal/openai"
 	"kizuna/internal/runtimecfg"
 	"kizuna/pkg/pluginapi"
@@ -41,6 +42,7 @@ type Config struct {
 	PluginsDir                string
 	DB                        *sql.DB
 	HostVersion               string
+	MemoryStore               *memory.Store
 	RuntimeStore              *runtimecfg.Store
 	ChatFn                    ChatFn
 	EmbedFn                   EmbedFn
@@ -51,6 +53,7 @@ type Config struct {
 
 type Manager struct {
 	registry     *Registry
+	memoryStore  *memory.Store
 	runtimeStore *runtimecfg.Store
 	hostVersion  string
 	chatFn       ChatFn
@@ -96,6 +99,7 @@ func NewManager(cfg Config) (*Manager, error) {
 
 	manager := &Manager{
 		registry:                  registry,
+		memoryStore:               cfg.MemoryStore,
 		runtimeStore:              cfg.RuntimeStore,
 		hostVersion:               strings.TrimSpace(cfg.HostVersion),
 		chatFn:                    cfg.ChatFn,
@@ -625,6 +629,108 @@ func (m *Manager) registerHostHandlers(process *managedPlugin) {
 			return nil, err
 		}
 		return struct{}{}, m.registry.StorageSet(process.install.ID, request.Key, request.Value)
+	})
+	process.session.RegisterHandler(pluginapi.MethodHostConfigGet, func(ctx context.Context, params json.RawMessage) (any, error) {
+		if err := m.requireCapability(process.install, pluginapi.CapabilityPluginConfigRead); err != nil {
+			return nil, err
+		}
+		value, ok := m.registry.ConfigGet(process.install.ID)
+		return pluginapi.ConfigGetResponse{
+			Found: ok,
+			Value: value,
+		}, nil
+	})
+	process.session.RegisterHandler(pluginapi.MethodHostConfigSet, func(ctx context.Context, params json.RawMessage) (any, error) {
+		if err := m.requireCapability(process.install, pluginapi.CapabilityPluginConfigWrite); err != nil {
+			return nil, err
+		}
+		var request pluginapi.ConfigSetRequest
+		if err := json.Unmarshal(params, &request); err != nil {
+			return nil, err
+		}
+		return struct{}{}, m.registry.ConfigSet(process.install.ID, request.Value)
+	})
+	process.session.RegisterHandler(pluginapi.MethodHostMemoryGet, func(ctx context.Context, params json.RawMessage) (any, error) {
+		if err := m.requireCapability(process.install, pluginapi.CapabilityMemoryRead); err != nil {
+			return nil, err
+		}
+		if m.memoryStore == nil {
+			return nil, errors.New("memory store is unavailable")
+		}
+		var request pluginapi.MemoryGetRequest
+		if err := json.Unmarshal(params, &request); err != nil {
+			return nil, err
+		}
+		summary, messages := m.memoryStore.SummaryAndRecent(request.ChannelID)
+		response := pluginapi.MemoryGetResponse{
+			Summary:  strings.TrimSpace(summary),
+			Messages: make([]pluginapi.MemoryMessage, 0, len(messages)),
+		}
+		for _, message := range messages {
+			response.Messages = append(response.Messages, pluginMemoryMessageFromRecord(message))
+		}
+		return response, nil
+	})
+	process.session.RegisterHandler(pluginapi.MethodHostMemorySearch, func(ctx context.Context, params json.RawMessage) (any, error) {
+		if err := m.requireCapability(process.install, pluginapi.CapabilityMemoryRead); err != nil {
+			return nil, err
+		}
+		if m.memoryStore == nil {
+			return nil, errors.New("memory store is unavailable")
+		}
+		var request pluginapi.MemorySearchRequest
+		if err := json.Unmarshal(params, &request); err != nil {
+			return nil, err
+		}
+		results, err := m.memoryStore.Search(ctx, request.ChannelID, request.Query, request.TopN)
+		if err != nil {
+			return nil, err
+		}
+		return pluginapi.MemorySearchResponse{
+			Results: pluginMemorySearchResults(results),
+		}, nil
+	})
+	process.session.RegisterHandler(pluginapi.MethodHostMemoryAppend, func(ctx context.Context, params json.RawMessage) (any, error) {
+		if err := m.requireCapability(process.install, pluginapi.CapabilityMemoryWrite); err != nil {
+			return nil, err
+		}
+		if m.memoryStore == nil {
+			return nil, errors.New("memory store is unavailable")
+		}
+		var request pluginapi.MemoryAppendRequest
+		if err := json.Unmarshal(params, &request); err != nil {
+			return nil, err
+		}
+		m.memoryStore.AddRecord(ctx, request.ChannelID, memoryRecordFromPluginMemoryMessage(request.Message))
+		return struct{}{}, nil
+	})
+	process.session.RegisterHandler(pluginapi.MethodHostMemorySetSummary, func(ctx context.Context, params json.RawMessage) (any, error) {
+		if err := m.requireCapability(process.install, pluginapi.CapabilityMemoryWrite); err != nil {
+			return nil, err
+		}
+		if m.memoryStore == nil {
+			return nil, errors.New("memory store is unavailable")
+		}
+		var request pluginapi.MemorySetSummaryRequest
+		if err := json.Unmarshal(params, &request); err != nil {
+			return nil, err
+		}
+		m.memoryStore.SetSummary(request.ChannelID, request.Summary)
+		return struct{}{}, nil
+	})
+	process.session.RegisterHandler(pluginapi.MethodHostMemoryTrim, func(ctx context.Context, params json.RawMessage) (any, error) {
+		if err := m.requireCapability(process.install, pluginapi.CapabilityMemoryWrite); err != nil {
+			return nil, err
+		}
+		if m.memoryStore == nil {
+			return nil, errors.New("memory store is unavailable")
+		}
+		var request pluginapi.MemoryTrimRequest
+		if err := json.Unmarshal(params, &request); err != nil {
+			return nil, err
+		}
+		m.memoryStore.TrimHistory(request.ChannelID, request.Keep)
+		return struct{}{}, nil
 	})
 	process.session.RegisterHandler(pluginapi.MethodHostListGuildEmojis, func(ctx context.Context, params json.RawMessage) (any, error) {
 		if err := m.requireCapability(process.install, pluginapi.CapabilityDiscordReadGuildEmojis); err != nil {

@@ -224,6 +224,16 @@ type MessageContext struct {
 	RepliedToBot bool             `json:"replied_to_bot,omitempty"`
 }
 
+type MemoryMessage struct {
+	Role    string           `json:"role"`
+	Guild   GuildInfo        `json:"guild"`
+	Content string           `json:"content,omitempty"`
+	Time    string           `json:"time,omitempty"`
+	Author  UserInfo         `json:"author"`
+	ReplyTo *ReplyInfo       `json:"reply_to,omitempty"`
+	Images  []ImageReference `json:"images,omitempty"`
+}
+
 type InitializeRequest struct {
 	Host     HostInfo `json:"host"`
 	Manifest Manifest `json:"manifest"`
@@ -408,6 +418,55 @@ type StorageGetResponse struct {
 type StorageSetRequest struct {
 	Key   string          `json:"key"`
 	Value json.RawMessage `json:"value"`
+}
+
+type ConfigGetResponse struct {
+	Found bool            `json:"found"`
+	Value json.RawMessage `json:"value,omitempty"`
+}
+
+type ConfigSetRequest struct {
+	Value json.RawMessage `json:"value"`
+}
+
+type MemoryGetRequest struct {
+	ChannelID string `json:"channel_id"`
+}
+
+type MemoryGetResponse struct {
+	Summary  string          `json:"summary,omitempty"`
+	Messages []MemoryMessage `json:"messages,omitempty"`
+}
+
+type MemorySearchRequest struct {
+	ChannelID string `json:"channel_id"`
+	Query     string `json:"query"`
+	TopN      int    `json:"top_n,omitempty"`
+}
+
+type MemorySearchResult struct {
+	Content  string `json:"content"`
+	Rendered string `json:"rendered,omitempty"`
+	Time     string `json:"time,omitempty"`
+}
+
+type MemorySearchResponse struct {
+	Results []MemorySearchResult `json:"results,omitempty"`
+}
+
+type MemoryAppendRequest struct {
+	ChannelID string        `json:"channel_id"`
+	Message   MemoryMessage `json:"message"`
+}
+
+type MemorySetSummaryRequest struct {
+	ChannelID string `json:"channel_id"`
+	Summary   string `json:"summary"`
+}
+
+type MemoryTrimRequest struct {
+	ChannelID string `json:"channel_id"`
+	Keep      int    `json:"keep"`
 }
 
 type GuildEmoji struct {
