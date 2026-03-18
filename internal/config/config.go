@@ -32,12 +32,11 @@ type OpenAIConfig struct {
 }
 
 type BotConfig struct {
-	DiscordToken         string
-	SystemPrompt         string
-	ConfigFilePath       string
-	CommandGuildID       string
-	PluginsDir           string
-	PluginMarketIndexURL string
+	DiscordToken   string
+	SystemPrompt   string
+	ConfigFilePath string
+	CommandGuildID string
+	PluginsDir     string
 }
 
 type Config struct {
@@ -105,8 +104,6 @@ func Load() (Config, error) {
 	if pluginsDir == "" {
 		pluginsDir = defaultPluginsDir
 	}
-	pluginMarketIndexURL := strings.TrimSpace(os.Getenv("PLUGIN_MARKET_INDEX_URL"))
-
 	return Config{
 		OpenAI: OpenAIConfig{
 			BaseURL:       baseURL,
@@ -121,12 +118,11 @@ func Load() (Config, error) {
 			HTTPTimeout:   httpTimeout,
 		},
 		Bot: BotConfig{
-			DiscordToken:         discordToken,
-			SystemPrompt:         systemPrompt,
-			ConfigFilePath:       configFilePath,
-			CommandGuildID:       commandGuildID,
-			PluginsDir:           pluginsDir,
-			PluginMarketIndexURL: pluginMarketIndexURL,
+			DiscordToken:   discordToken,
+			SystemPrompt:   systemPrompt,
+			ConfigFilePath: configFilePath,
+			CommandGuildID: commandGuildID,
+			PluginsDir:     pluginsDir,
 		},
 	}, nil
 }

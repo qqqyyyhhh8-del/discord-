@@ -1,6 +1,6 @@
 # Discord Go Bot
 
-[简体中文](README.md) | [English](README.en.md)
+[简体中文](README.md) | [English](README.en.md) | [Plugin Guide](PLUGIN_GUIDE.en.md)
 
 Current version: `v0.6.0`  
 See [CHANGELOG.md](CHANGELOG.md) for release notes.
@@ -12,7 +12,6 @@ This is a Discord bot built with Go + Discordgo. It includes:
 - Plugin-based persona, guild emoji, and proactive-reply extensions
 - Core slash management for speaking scopes, admins, and extra system prompt
 - External plugin hosting with Git-installed extensions
-- Static plugin market indexing that can surface inside the bot `/plugin` panel
 - Worldbook injection with persistent guild emoji summaries
 
 ## Features
@@ -28,15 +27,12 @@ This is a Discord bot built with Go + Discordgo. It includes:
 
 ## Official Plugins
 - Official plugin repo: [`qqqyyyhhh8-del/discord-bot-plugins`](https://github.com/qqqyyyhhh8-del/discord-bot-plugins)
-- Official plugin market repo: [`qqqyyyhhh8-del/discord-bot-market`](https://github.com/qqqyyyhhh8-del/discord-bot-market)
-- Market site: <https://qqqyyyhhh8-del.github.io/discord-bot-market/>
 - Open the `/plugin` panel, click `Install`, then fill in:
   Persona: `repo=https://github.com/qqqyyyhhh8-del/discord-bot-plugins.git`, `path=plugins/persona`
   Proactive: `repo=https://github.com/qqqyyyhhh8-del/discord-bot-plugins.git`, `path=plugins/proactive`
   Emoji: `repo=https://github.com/qqqyyyhhh8-del/discord-bot-plugins.git`, `path=plugins/emoji`
 
 After installation, the host will register `/persona`, `/proactive`, and `/emoji` automatically.
-If `PLUGIN_MARKET_INDEX_URL` is configured, the `/plugin` panel also shows a market preview plus site/submit link buttons.
 
 ## Environment Variables
 | Variable | Description |
@@ -56,7 +52,6 @@ If `PLUGIN_MARKET_INDEX_URL` is configured, the `/plugin` panel also shows a mar
 | `BOT_CONFIG_FILE` | Runtime config file path (default: `bot_config.json`) |
 | `BOT_COMMAND_GUILD_ID` | Optional guild ID for slash command registration. If empty, commands are global |
 | `PLUGINS_DIR` | Plugin host working directory (default: `plugins`) containing the plugin registry and installed source trees |
-| `PLUGIN_MARKET_INDEX_URL` | Optional plugin market JSON index URL. When set, the `/plugin` panel loads market metadata |
 
 ## Quick Start
 1. Clone the repo and enter the directory:
@@ -129,13 +124,18 @@ If `BOT_CONFIG_FILE` does not exist, it will be created automatically on startup
 
 ## Plugin Development
 
+- Plugin guide: [PLUGIN_GUIDE.en.md](PLUGIN_GUIDE.en.md)
+- Example navigation:
+  [examples/plugins/style-note/plugin.json](examples/plugins/style-note/plugin.json) ·
+  [examples/plugins/style-note/cmd/style-note-plugin/main.go](examples/plugins/style-note/cmd/style-note-plugin/main.go) ·
+  [pkg/pluginapi/types.go](pkg/pluginapi/types.go) ·
+  [pkg/pluginapi/sdk.go](pkg/pluginapi/sdk.go)
 - The shared protocol and Go SDK live in `pkg/pluginapi`.
 - Every plugin must provide a `plugin.json` manifest.
 - The current host supports slash commands, button/modal prefix routing, message hooks, prompt injection, response postprocessing, interval hooks, plugin-private storage, and capability-checked host calls.
 - An official example plugin is available in `examples/plugins/style-note`.
 - To install the sample plugin from this repository, open the `/plugin` panel and fill:
   `repo=https://github.com/qqqyyyhhh8-del/discord-.git`, `path=examples/plugins/style-note`
-- You can also list plugin metadata in the official market repository `public/index.json`; the bot consumes that same index through `PLUGIN_MARKET_INDEX_URL`.
 
 ## License
 

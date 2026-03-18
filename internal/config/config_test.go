@@ -36,7 +36,6 @@ SYSTEM_PROMPT="测试 system prompt"
 BOT_CONFIG_FILE=runtime-config.json
 BOT_COMMAND_GUILD_ID=test-guild
 PLUGINS_DIR=test-plugins
-PLUGIN_MARKET_INDEX_URL=https://example.com/market/index.json
 `
 	if err := os.WriteFile(filepath.Join(tempDir, ".env"), []byte(dotEnv), 0o600); err != nil {
 		t.Fatalf("write .env: %v", err)
@@ -58,7 +57,6 @@ PLUGIN_MARKET_INDEX_URL=https://example.com/market/index.json
 		"BOT_CONFIG_FILE",
 		"BOT_COMMAND_GUILD_ID",
 		"PLUGINS_DIR",
-		"PLUGIN_MARKET_INDEX_URL",
 	} {
 		restoreEnvKey(t, key, nil)
 	}
@@ -112,9 +110,6 @@ PLUGIN_MARKET_INDEX_URL=https://example.com/market/index.json
 	}
 	if cfg.Bot.PluginsDir != "test-plugins" {
 		t.Fatalf("unexpected plugins dir: %q", cfg.Bot.PluginsDir)
-	}
-	if cfg.Bot.PluginMarketIndexURL != "https://example.com/market/index.json" {
-		t.Fatalf("unexpected plugin market index url: %q", cfg.Bot.PluginMarketIndexURL)
 	}
 }
 

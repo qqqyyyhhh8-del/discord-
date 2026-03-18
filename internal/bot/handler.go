@@ -16,7 +16,6 @@ import (
 	"discordbot/internal/memory"
 	"discordbot/internal/openai"
 	"discordbot/internal/pluginhost"
-	"discordbot/internal/pluginmarket"
 	"discordbot/internal/runtimecfg"
 	"discordbot/pkg/pluginapi"
 )
@@ -45,11 +44,6 @@ type Handler struct {
 	emojiMu        sync.Mutex
 	emojiAnalyzing map[string]struct{}
 	randFloat64    func() float64
-
-	pluginMarketMu        sync.Mutex
-	pluginMarketCachedAt  time.Time
-	pluginMarketIndex     pluginmarket.Index
-	pluginMarketLastError string
 }
 
 func NewHandler(cfg config.BotConfig, chatFn ChatFn, embedFn EmbedFn, rerankFn RerankFn, store *memory.Store, runtimeStore *runtimecfg.Store) *Handler {

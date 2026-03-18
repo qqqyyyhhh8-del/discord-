@@ -1,11 +1,11 @@
 package bot
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"discordbot/internal/pluginhost"
-	"discordbot/internal/pluginmarket"
 	"discordbot/pkg/pluginapi"
 
 	"github.com/bwmarrin/discordgo"
@@ -32,7 +32,7 @@ func TestBuildPluginPanelEmbedIncludesSelectedPluginDetails(t *testing.T) {
 	embed := buildPluginPanelEmbed([]pluginhost.InstalledPlugin{plugin}, plugin, true, speechLocation{
 		GuildID:   "guild-1",
 		ChannelID: "channel-1",
-	}, true, "已刷新", pluginmarket.Index{}, "")
+	}, true, "已刷新")
 	if embed == nil {
 		t.Fatal("expected embed")
 	}
@@ -82,7 +82,7 @@ func TestBuildPluginPanelComponentsDisablesPrivilegedActionsForAdmin(t *testing.
 
 	components := buildPluginPanelComponents([]pluginhost.InstalledPlugin{plugin}, plugin, true, speechLocation{
 		GuildID: "guild-1",
-	}, true, false, pluginmarket.Index{})
+	}, true, false)
 	if len(components) != 3 {
 		t.Fatalf("expected 3 component rows, got %d", len(components))
 	}
@@ -98,8 +98,8 @@ func TestBuildPluginPanelComponentsDisablesPrivilegedActionsForAdmin(t *testing.
 
 	install := row1.Components[0].(discordgo.Button)
 	refresh := row1.Components[3].(discordgo.Button)
-	if !install.Disabled {
-		t.Fatal("expected install button to be disabled for non-super-admin")
+	if install.Disabled {
+		t.Fatal("expected install button to stay enabled for admin")
 	}
 	if refresh.Disabled {
 		t.Fatal("expected refresh button to stay enabled")
@@ -115,36 +115,34 @@ func TestBuildPluginPanelComponentsDisablesPrivilegedActionsForAdmin(t *testing.
 	}
 }
 
-func TestBuildPluginPanelComponentsIncludesMarketLinks(t *testing.T) {
-	plugin := pluginhost.InstalledPlugin{
-		ID:   "official_persona",
-		Name: "Official Persona Plugin",
-	}
+func TestPluginComponentResponseOpenInstallReturnsModalForAdmin(t *testing.T) {
+	runtimeStore := newTestRuntimeStore(t, `{
+  "super_admin_ids": ["owner-1"],
+  "admin_ids": ["admin-1"],
+  "system_prompt": ""
+}`)
+	handler := newPanelTestHandler(runtimeStore)
 
-	components := buildPluginPanelComponents([]pluginhost.InstalledPlugin{plugin}, plugin, true, speechLocation{
-		GuildID: "guild-1",
-	}, true, true, pluginmarket.Index{
-		SiteURL:   "https://example.com/market/",
-		SubmitURL: "https://example.com/market/submit",
+	manager, err := pluginhost.NewManager(pluginhost.Config{
+		PluginsDir:   filepath.Join(t.TempDir(), "plugins"),
+		RuntimeStore: runtimeStore,
 	})
-	if len(components) != 4 {
-		t.Fatalf("expected 4 component rows, got %d", len(components))
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
 	}
+	handler.SetPluginManager(manager)
 
-	row, ok := components[3].(discordgo.ActionsRow)
-	if !ok {
-		t.Fatalf("expected actions row, got %T", components[3])
+	response, err := handler.PluginComponentResponse("admin-1", speechLocation{GuildID: "guild-1"}, discordgo.MessageComponentInteractionData{
+		CustomID: pluginActionCustomID(pluginActionOpenInstall, ""),
+	})
+	if err != nil {
+		t.Fatalf("open install modal: %v", err)
 	}
-	if len(row.Components) != 2 {
-		t.Fatalf("expected 2 market buttons, got %d", len(row.Components))
+	if response.Type != discordgo.InteractionResponseModal {
+		t.Fatalf("expected modal response, got %v", response.Type)
 	}
-	site := row.Components[0].(discordgo.Button)
-	submit := row.Components[1].(discordgo.Button)
-	if site.Style != discordgo.LinkButton || site.URL != "https://example.com/market/" {
-		t.Fatalf("unexpected site button: %#v", site)
-	}
-	if submit.Style != discordgo.LinkButton || submit.URL != "https://example.com/market/submit" {
-		t.Fatalf("unexpected submit button: %#v", submit)
+	if response.Data == nil || response.Data.CustomID != pluginActionCustomID(pluginModalInstall, "") {
+		t.Fatalf("unexpected modal data: %#v", response.Data)
 	}
 }
 
