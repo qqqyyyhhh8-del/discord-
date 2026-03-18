@@ -209,6 +209,117 @@ func TestSpeechScopeModesAndAllowlist(t *testing.T) {
 	}
 }
 
+func TestAllowsSpeechSupportsMultipleGuildChannelAndThreadIDs(t *testing.T) {
+	store, _ := newTestStore(t, `{
+  "super_admin_ids": ["owner-1"],
+  "admin_ids": [],
+  "personas": {},
+  "active_persona": "",
+  "system_prompt": "",
+  "speech_mode": "allowlist",
+  "allowed_guild_ids": ["guild-1", "guild-2", "guild-3"],
+  "allowed_channel_ids": ["channel-1", "channel-2", "channel-3"],
+  "allowed_thread_ids": ["thread-1", "thread-2", "thread-3"]
+}`)
+
+	if !store.AllowsSpeech("guild-2", "", "") {
+		t.Fatal("expected second guild id to permit speech")
+	}
+	if !store.AllowsSpeech("", "channel-2", "") {
+		t.Fatal("expected second channel id to permit speech")
+	}
+	if !store.AllowsSpeech("", "", "thread-2") {
+		t.Fatal("expected second thread id to permit speech")
+	}
+	if !store.AllowsSpeech("guild-3", "", "") {
+		t.Fatal("expected third guild id to permit speech")
+	}
+	if !store.AllowsSpeech("", "channel-3", "") {
+		t.Fatal("expected third channel id to permit speech")
+	}
+	if !store.AllowsSpeech("", "", "thread-3") {
+		t.Fatal("expected third thread id to permit speech")
+	}
+}
+
+func TestLegacySpeechModeAllNormalizesToAllowlist(t *testing.T) {
+	store, _ := newTestStore(t, `{
+  "super_admin_ids": ["owner-1"],
+  "admin_ids": [],
+  "personas": {},
+  "active_persona": "",
+  "system_prompt": "",
+  "speech_mode": "all",
+  "allowed_guild_ids": [],
+  "allowed_channel_ids": [],
+  "allowed_thread_ids": []
+}`)
+
+	mode, _, _, _ := store.SpeechScope()
+	if mode != SpeechModeAllowlist {
+		t.Fatalf("expected legacy all mode to normalize to allowlist, got %q", mode)
+	}
+	if store.AllowsSpeech("guild-1", "channel-1", "thread-1") {
+		t.Fatal("expected empty allowlist to block speech")
+	}
+}
+
+func TestProactiveReplyConfigPersists(t *testing.T) {
+	store, path := newTestStore(t, `{
+  "super_admin_ids": ["owner-1"],
+  "admin_ids": [],
+  "personas": {},
+  "active_persona": "",
+  "system_prompt": "",
+  "proactive_reply": true,
+  "proactive_chance": 17.5
+}`)
+
+	enabled, chance := store.ProactiveReplyConfig()
+	if !enabled {
+		t.Fatal("expected proactive reply to be enabled")
+	}
+	if chance != 17.5 {
+		t.Fatalf("unexpected proactive chance: %v", chance)
+	}
+
+	if err := store.SetProactiveReplyEnabled(false); err != nil {
+		t.Fatalf("disable proactive reply: %v", err)
+	}
+	if err := store.SetProactiveReplyChance(32.25); err != nil {
+		t.Fatalf("set proactive chance: %v", err)
+	}
+
+	reopened, err := Open(path)
+	if err != nil {
+		t.Fatalf("reopen store: %v", err)
+	}
+	enabled, chance = reopened.ProactiveReplyConfig()
+	if enabled {
+		t.Fatal("expected proactive reply to be disabled after reopen")
+	}
+	if chance != 32.25 {
+		t.Fatalf("unexpected reopened proactive chance: %v", chance)
+	}
+}
+
+func TestSetProactiveReplyChanceRejectsOutOfRange(t *testing.T) {
+	store, _ := newTestStore(t, `{
+  "super_admin_ids": ["owner-1"],
+  "admin_ids": [],
+  "personas": {},
+  "active_persona": "",
+  "system_prompt": ""
+}`)
+
+	if err := store.SetProactiveReplyChance(-1); err == nil {
+		t.Fatal("expected negative proactive chance to fail")
+	}
+	if err := store.SetProactiveReplyChance(101); err == nil {
+		t.Fatal("expected proactive chance above 100 to fail")
+	}
+}
+
 func TestComposePromptsForGuildIncludesMatchingWorldBookOnly(t *testing.T) {
 	store, _ := newTestStore(t, `{
   "super_admin_ids": ["owner-1"],

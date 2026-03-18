@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math/rand"
 	"net/http"
 	"sort"
 	"strings"
@@ -39,6 +40,7 @@ type Handler struct {
 
 	emojiMu        sync.Mutex
 	emojiAnalyzing map[string]struct{}
+	randFloat64    func() float64
 }
 
 func NewHandler(cfg config.BotConfig, chatFn ChatFn, embedFn EmbedFn, rerankFn RerankFn, store *memory.Store, runtimeStore *runtimecfg.Store) *Handler {
@@ -51,6 +53,7 @@ func NewHandler(cfg config.BotConfig, chatFn ChatFn, embedFn EmbedFn, rerankFn R
 		runtimeStore:   runtimeStore,
 		httpClient:     &http.Client{Timeout: 30 * time.Second},
 		emojiAnalyzing: map[string]struct{}{},
+		randFloat64:    rand.Float64,
 	}
 }
 
@@ -137,6 +140,23 @@ func (h *Handler) retrieveRelevantMemories(ctx context.Context, channelID, query
 		return takeRenderedMemories(candidates, retrievalTopK)
 	}
 	return matchRenderedMemories(candidates, reranked, retrievalTopK)
+}
+
+func (h *Handler) ShouldProactiveReply() bool {
+	if h == nil || h.runtimeStore == nil {
+		return false
+	}
+
+	enabled, chance := h.runtimeStore.ProactiveReplyConfig()
+	if !enabled || chance <= 0 {
+		return false
+	}
+
+	random := rand.Float64
+	if h.randFloat64 != nil {
+		random = h.randFloat64
+	}
+	return random()*100 < chance
 }
 
 func (h *Handler) handlePersonaCommand(content, authorID string) (string, error) {
@@ -316,7 +336,7 @@ func summarizationPrompt(summary string, messages []memory.MessageRecord) []open
 	}
 	builder.WriteString("需要总结的新对话:\n")
 	for _, msg := range messages {
-		builder.WriteString(fmt.Sprintf("[%s]\n%s\n\n", msg.Role, msg.RenderForModel()))
+		builder.WriteString(fmt.Sprintf("[%s]\n%s\n\n", msg.Role, renderMessageForLLM(msg)))
 	}
 	builder.WriteString("\n请用简洁中文更新摘要，保留关键事实、偏好和待办。")
 	return []openai.ChatMessage{
@@ -350,15 +370,16 @@ func buildChatMessages(systemPrompt, personaPrompt, summary string, recent []mem
 		})
 	}
 	for _, msg := range recent {
+		content := renderMessageForLLM(msg)
 		if len(msg.Images) == 0 {
 			messages = append(messages, openai.ChatMessage{
 				Role:    msg.Role,
-				Content: msg.RenderForModel(),
+				Content: content,
 			})
 			continue
 		}
 
-		parts := []openai.ChatContentPart{openai.TextPart(msg.RenderForModel())}
+		parts := []openai.ChatContentPart{openai.TextPart(content)}
 		for _, image := range msg.Images {
 			part := openai.ImageURLPart(image.URL)
 			if part.ImageURL == nil {
@@ -372,6 +393,13 @@ func buildChatMessages(systemPrompt, personaPrompt, summary string, recent []mem
 		})
 	}
 	return messages
+}
+
+func renderMessageForLLM(msg memory.MessageRecord) string {
+	if strings.TrimSpace(msg.Role) == "assistant" {
+		return strings.TrimSpace(msg.Content)
+	}
+	return msg.RenderForModel()
 }
 
 func DefaultTimeout() time.Duration {
@@ -483,8 +511,9 @@ func commandHelp() string {
 	parts := []string{
 		"可用 Slash 命令:",
 		personaHelp(),
-		speechHelp(),
+		setupHelp(),
 		emojiHelp(),
+		proactiveHelp(),
 		systemHelp(),
 		adminHelp(),
 	}
@@ -495,6 +524,16 @@ func personaHelp() string {
 	return "/persona 打开一站式人设管理面板"
 }
 
+func setupHelp() string {
+	return strings.Join([]string{
+		"/setup show",
+		"/setup server",
+		"/setup channel",
+		"/setup thread",
+		"/setup clear",
+	}, "\n")
+}
+
 func systemHelp() string {
 	return strings.Join([]string{
 		"/system show",
@@ -503,12 +542,12 @@ func systemHelp() string {
 	}, "\n")
 }
 
-func speechHelp() string {
-	return "/speech 打开机器人发言范围管理面板"
-}
-
 func emojiHelp() string {
 	return "/emoji 打开服务器表情管理面板"
+}
+
+func proactiveHelp() string {
+	return "/proactive 打开主动回复管理面板"
 }
 
 func adminHelp() string {

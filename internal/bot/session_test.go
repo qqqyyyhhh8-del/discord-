@@ -2,7 +2,10 @@ package bot
 
 import (
 	"context"
+	"io"
+	"net/http"
 	"reflect"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -82,6 +85,35 @@ func TestPromptContentForMessageAcceptsReplyToBot(t *testing.T) {
 	}
 	if content != "follow up question" {
 		t.Fatalf("expected original content, got %q", content)
+	}
+}
+
+func TestProactivePromptContentForMessageAcceptsGuildMessageWithoutMention(t *testing.T) {
+	message := &discordgo.MessageCreate{
+		Message: &discordgo.Message{
+			GuildID: "guild-1",
+			Content: "普通群聊消息",
+		},
+	}
+
+	content, ok := proactivePromptContentForMessage(message)
+	if !ok {
+		t.Fatal("expected proactive prompt content to accept guild message")
+	}
+	if content != "普通群聊消息" {
+		t.Fatalf("unexpected proactive content: %q", content)
+	}
+}
+
+func TestProactivePromptContentForMessageRejectsDM(t *testing.T) {
+	message := &discordgo.MessageCreate{
+		Message: &discordgo.Message{
+			Content: "dm message",
+		},
+	}
+
+	if _, ok := proactivePromptContentForMessage(message); ok {
+		t.Fatal("expected proactive prompt content to reject dm")
 	}
 }
 
@@ -243,6 +275,72 @@ func TestBuildReplyMessageSendUsesReplyReferenceWithoutMention(t *testing.T) {
 	}
 }
 
+func TestBuildPlainMessageSendDisablesMentions(t *testing.T) {
+	send := buildPlainMessageSend(" hi ")
+
+	if send.Content != "hi" {
+		t.Fatalf("expected trimmed content, got %q", send.Content)
+	}
+	if send.Reference != nil {
+		t.Fatalf("expected no message reference, got %#v", send.Reference)
+	}
+	if send.AllowedMentions == nil {
+		t.Fatal("expected allowed mentions to be set")
+	}
+	if send.AllowedMentions.RepliedUser {
+		t.Fatal("expected replied user mention to be disabled")
+	}
+	if len(send.AllowedMentions.Parse) != 0 {
+		t.Fatalf("expected no parsed mentions, got %#v", send.AllowedMentions.Parse)
+	}
+}
+
+func TestSendMessageReplyFallsBackWithoutReference(t *testing.T) {
+	var requestBodies []string
+	session := &discordgo.Session{
+		Client: &http.Client{
+			Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				body, err := io.ReadAll(req.Body)
+				if err != nil {
+					t.Fatalf("read request body: %v", err)
+				}
+				requestBodies = append(requestBodies, string(body))
+
+				if len(requestBodies) == 1 {
+					if !strings.Contains(requestBodies[0], "\"message_reference\"") {
+						t.Fatalf("expected first request to include message reference, got %s", requestBodies[0])
+					}
+					return jsonResponse(http.StatusForbidden, `{"message":"Missing Permissions","code":50013}`), nil
+				}
+
+				if strings.Contains(requestBodies[len(requestBodies)-1], "\"message_reference\"") {
+					t.Fatalf("expected fallback request to omit message reference, got %s", requestBodies[len(requestBodies)-1])
+				}
+				return jsonResponse(http.StatusOK, `{"id":"msg-2","channel_id":"channel-1","content":"hi"}`), nil
+			}),
+		},
+		Ratelimiter: discordgo.NewRatelimiter(),
+		Token:       "Bot test-token",
+	}
+
+	message, err := sendMessageReply(session, &discordgo.MessageCreate{
+		Message: &discordgo.Message{
+			ID:        "msg-1",
+			ChannelID: "channel-1",
+			GuildID:   "guild-1",
+		},
+	}, " hi ")
+	if err != nil {
+		t.Fatalf("send message reply: %v", err)
+	}
+	if message == nil || message.ID != "msg-2" {
+		t.Fatalf("unexpected response message: %#v", message)
+	}
+	if len(requestBodies) != 2 {
+		t.Fatalf("expected two send attempts, got %d", len(requestBodies))
+	}
+}
+
 func TestPromptContentForMessageAcceptsImageOnlyReply(t *testing.T) {
 	session := &discordgo.Session{
 		State: &discordgo.State{
@@ -319,5 +417,21 @@ func waitForTypingCall(t *testing.T, sendCh <-chan struct{}) {
 	case <-sendCh:
 	case <-time.After(200 * time.Millisecond):
 		t.Fatal("timed out waiting for typing signal")
+	}
+}
+
+type roundTripFunc func(req *http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+func jsonResponse(statusCode int, body string) *http.Response {
+	return &http.Response{
+		StatusCode: statusCode,
+		Header: http.Header{
+			"Content-Type": []string{"application/json"},
+		},
+		Body: io.NopCloser(strings.NewReader(body)),
 	}
 }

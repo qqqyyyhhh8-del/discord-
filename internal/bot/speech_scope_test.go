@@ -91,3 +91,79 @@ func TestAllowsSpeechForMessageBlocksWhenModeNone(t *testing.T) {
 		t.Fatal("expected none mode to block message")
 	}
 }
+
+func TestAllowsSpeechForMessageSupportsSecondGuildAndChannelEntries(t *testing.T) {
+	runtimeStore := newTestRuntimeStore(t, `{
+  "super_admin_ids": ["owner-1"],
+  "admin_ids": ["admin-1"],
+  "personas": {},
+  "active_persona": "",
+  "system_prompt": "",
+  "speech_mode": "allowlist",
+  "allowed_guild_ids": ["guild-1", "guild-2"],
+  "allowed_channel_ids": ["channel-1", "channel-2"],
+  "allowed_thread_ids": ["thread-1", "thread-2"]
+}`)
+
+	handler := NewHandler(
+		config.BotConfig{SystemPrompt: "基础 system prompt"},
+		func(ctx context.Context, messages []openai.ChatMessage) (string, error) {
+			return "ok", nil
+		},
+		func(ctx context.Context, input string) ([]float64, error) {
+			return []float64{1, 2, 3}, nil
+		},
+		nil,
+		memory.NewStore(func(ctx context.Context, input string) ([]float64, error) {
+			return []float64{1, 2, 3}, nil
+		}),
+		runtimeStore,
+	)
+
+	if !handler.AllowsSpeechForMessage(&discordgo.Session{}, &discordgo.MessageCreate{
+		Message: &discordgo.Message{GuildID: "guild-2", ChannelID: "other-channel"},
+	}) {
+		t.Fatal("expected second guild allowlist entry to permit message")
+	}
+
+	if !handler.AllowsSpeechForMessage(&discordgo.Session{}, &discordgo.MessageCreate{
+		Message: &discordgo.Message{GuildID: "other-guild", ChannelID: "channel-2"},
+	}) {
+		t.Fatal("expected second channel allowlist entry to permit message")
+	}
+}
+
+func TestAllowsSpeechForMessageAllowsRawThreadIDWhenChannelIsUnresolved(t *testing.T) {
+	runtimeStore := newTestRuntimeStore(t, `{
+  "super_admin_ids": ["owner-1"],
+  "admin_ids": ["admin-1"],
+  "personas": {},
+  "active_persona": "",
+  "system_prompt": "",
+  "speech_mode": "allowlist",
+  "allowed_guild_ids": [],
+  "allowed_channel_ids": [],
+  "allowed_thread_ids": ["thread-2"]
+}`)
+
+	handler := NewHandler(
+		config.BotConfig{SystemPrompt: "基础 system prompt"},
+		func(ctx context.Context, messages []openai.ChatMessage) (string, error) {
+			return "ok", nil
+		},
+		func(ctx context.Context, input string) ([]float64, error) {
+			return []float64{1, 2, 3}, nil
+		},
+		nil,
+		memory.NewStore(func(ctx context.Context, input string) ([]float64, error) {
+			return []float64{1, 2, 3}, nil
+		}),
+		runtimeStore,
+	)
+
+	if !handler.AllowsSpeechForMessage(&discordgo.Session{}, &discordgo.MessageCreate{
+		Message: &discordgo.Message{GuildID: "guild-2", ChannelID: "thread-2"},
+	}) {
+		t.Fatal("expected unresolved raw thread id to permit message")
+	}
+}

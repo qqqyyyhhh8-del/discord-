@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"discordbot/internal/bot"
+	"discordbot/internal/buildinfo"
 	"discordbot/internal/config"
 	"discordbot/internal/memory"
 	"discordbot/internal/openai"
@@ -43,7 +44,7 @@ func main() {
 	if err := session.Open(); err != nil {
 		log.Fatal(err)
 	}
-	log.Println("Bot is running. Press CTRL-C to exit.")
+	log.Printf("Bot is running (%s). Press CTRL-C to exit.", buildinfo.Version)
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)

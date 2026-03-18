@@ -3,6 +3,7 @@ package bot
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -33,29 +34,22 @@ func NewSession(token, commandGuildID string, handler *Handler) (*Session, error
 		}
 
 		content, ok := promptContentForMessage(s, m)
-		if !ok {
+		if ok {
+			if !handler.AllowsSpeechForMessage(s, m) {
+				return
+			}
+			handleIncomingMessage(s, m, handler, content)
+			return
+		}
+
+		content, ok = proactivePromptContentForMessage(m)
+		if !ok || !handler.ShouldProactiveReply() {
 			return
 		}
 		if !handler.AllowsSpeechForMessage(s, m) {
 			return
 		}
-
-		ctx, cancel := context.WithTimeout(context.Background(), DefaultTimeout())
-		defer cancel()
-		stopTyping := startTypingLoop(ctx, m.ChannelID, func(channelID string) error {
-			return s.ChannelTyping(channelID)
-		}, typingRefreshInterval)
-		defer stopTyping()
-
-		response, err := handler.HandleMessageRecord(ctx, m.ChannelID, messageRecordForDiscordMessage(m, content, botUserIDFromSession(s)))
-		if err != nil {
-			_, _ = sendMessageReply(s, m, "抱歉，我现在无法回应。")
-			return
-		}
-		if strings.TrimSpace(response) == "" {
-			return
-		}
-		_, _ = sendMessageReply(s, m, response)
+		handleIncomingMessage(s, m, handler, content)
 	})
 	session.AddHandler(func(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		if i == nil {
@@ -73,20 +67,28 @@ func NewSession(token, commandGuildID string, handler *Handler) (*Session, error
 				_ = s.InteractionRespond(i.Interaction, response)
 				return
 			}
-			if commandData.Name == "speech" {
-				response, err := handler.SpeechPanelCommandResponse(interactionUserID(i))
-				if err != nil {
-					response = simpleEphemeralInteractionResponse("抱歉，我现在无法打开发言范围面板。")
-				}
-				_ = s.InteractionRespond(i.Interaction, response)
-				return
-			}
 			if commandData.Name == "emoji" {
 				response, err := handler.EmojiPanelCommandResponse(interactionUserID(i), i.GuildID, guildNameFromSession(s, i.GuildID))
 				if err != nil {
 					response = simpleEphemeralInteractionResponse("抱歉，我现在无法打开表情管理面板。")
 				}
 				_ = s.InteractionRespond(i.Interaction, response)
+				return
+			}
+			if commandData.Name == "proactive" {
+				response, err := handler.ProactivePanelCommandResponse(interactionUserID(i), speechLocationForInteraction(s, i))
+				if err != nil {
+					response = simpleEphemeralInteractionResponse("抱歉，我现在无法打开主动回复面板。")
+				}
+				_ = s.InteractionRespond(i.Interaction, response)
+				return
+			}
+			if commandData.Name == "setup" {
+				response, err := handler.handleSetupCommand(interactionUserID(i), speechLocationForInteraction(s, i), commandData.Options)
+				if err != nil {
+					response = "抱歉，我现在无法保存这个允许发言范围设置。"
+				}
+				_ = respondToInteraction(s, i.Interaction, response, true)
 				return
 			}
 
@@ -108,14 +110,6 @@ func NewSession(token, commandGuildID string, handler *Handler) (*Session, error
 				response, err := handler.PersonaComponentResponse(interactionUserID(i), componentData)
 				if err != nil {
 					response = simpleEphemeralInteractionResponse("抱歉，我现在无法处理这个人设操作。")
-				}
-				_ = s.InteractionRespond(i.Interaction, response)
-				return
-			}
-			if isSpeechInteractionCustomID(componentData.CustomID) {
-				response, err := handler.SpeechComponentResponse(interactionUserID(i), componentData)
-				if err != nil {
-					response = simpleEphemeralInteractionResponse("抱歉，我现在无法处理这个发言范围操作。")
 				}
 				_ = s.InteractionRespond(i.Interaction, response)
 				return
@@ -146,6 +140,14 @@ func NewSession(token, commandGuildID string, handler *Handler) (*Session, error
 				_ = s.InteractionRespond(i.Interaction, response)
 				return
 			}
+			if isProactiveInteractionCustomID(componentData.CustomID) {
+				response, err := handler.ProactiveComponentResponse(interactionUserID(i), speechLocationForInteraction(s, i), componentData)
+				if err != nil {
+					response = simpleEphemeralInteractionResponse("抱歉，我现在无法处理这个主动回复操作。")
+				}
+				_ = s.InteractionRespond(i.Interaction, response)
+				return
+			}
 		case discordgo.InteractionModalSubmit:
 			modalData := i.ModalSubmitData()
 			if isPersonaInteractionCustomID(modalData.CustomID) {
@@ -156,10 +158,10 @@ func NewSession(token, commandGuildID string, handler *Handler) (*Session, error
 				_ = s.InteractionRespond(i.Interaction, response)
 				return
 			}
-			if isSpeechInteractionCustomID(modalData.CustomID) {
-				response, err := handler.SpeechModalResponse(interactionUserID(i), modalData)
+			if isProactiveInteractionCustomID(modalData.CustomID) {
+				response, err := handler.ProactiveModalResponse(interactionUserID(i), speechLocationForInteraction(s, i), modalData)
 				if err != nil {
-					response = simpleEphemeralInteractionResponse("抱歉，我现在无法保存这个发言范围设置。")
+					response = simpleEphemeralInteractionResponse("抱歉，我现在无法保存这个主动回复设置。")
 				}
 				_ = s.InteractionRespond(i.Interaction, response)
 				return
@@ -202,6 +204,22 @@ func promptContentForMessage(s *discordgo.Session, m *discordgo.MessageCreate) (
 		content = strings.ReplaceAll(content, "<@!"+selfID+">", "")
 	}
 	content = strings.TrimSpace(content)
+	if content == "" && !hasVisualInput {
+		return "", false
+	}
+	return content, true
+}
+
+func proactivePromptContentForMessage(m *discordgo.MessageCreate) (string, bool) {
+	if m == nil || m.Message == nil {
+		return "", false
+	}
+	if strings.TrimSpace(m.GuildID) == "" {
+		return "", false
+	}
+
+	content := strings.TrimSpace(m.Content)
+	hasVisualInput := discordMessageHasVisualInput(m.Message)
 	if content == "" && !hasVisualInput {
 		return "", false
 	}
@@ -296,21 +314,57 @@ func sendMessageReply(s *discordgo.Session, trigger *discordgo.MessageCreate, co
 	if s == nil || trigger == nil || trigger.Message == nil {
 		return nil, fmt.Errorf("message reply context is missing")
 	}
-	return s.ChannelMessageSendComplex(trigger.ChannelID, buildReplyMessageSend(trigger.Message, content))
+
+	replySend := buildReplyMessageSend(trigger.Message, content)
+	message, err := s.ChannelMessageSendComplex(trigger.ChannelID, replySend)
+	if err == nil {
+		return message, nil
+	}
+
+	log.Printf("reply send failed, retrying without message reference: guild=%s channel=%s trigger=%s err=%v", strings.TrimSpace(trigger.GuildID), strings.TrimSpace(trigger.ChannelID), strings.TrimSpace(trigger.ID), err)
+	return s.ChannelMessageSendComplex(trigger.ChannelID, buildPlainMessageSend(content))
+}
+
+func handleIncomingMessage(s *discordgo.Session, m *discordgo.MessageCreate, handler *Handler, content string) {
+	ctx, cancel := context.WithTimeout(context.Background(), DefaultTimeout())
+	defer cancel()
+
+	stopTyping := startTypingLoop(ctx, m.ChannelID, func(channelID string) error {
+		return s.ChannelTyping(channelID)
+	}, typingRefreshInterval)
+	defer stopTyping()
+
+	response, err := handler.HandleMessageRecord(ctx, m.ChannelID, messageRecordForDiscordMessage(m, content, botUserIDFromSession(s)))
+	if err != nil {
+		if _, sendErr := sendMessageReply(s, m, "抱歉，我现在无法回应。"); sendErr != nil {
+			log.Printf("failed to send fallback error reply: guild=%s channel=%s trigger=%s err=%v", strings.TrimSpace(m.GuildID), strings.TrimSpace(m.ChannelID), strings.TrimSpace(m.ID), sendErr)
+		}
+		return
+	}
+	if strings.TrimSpace(response) == "" {
+		return
+	}
+	if _, err := sendMessageReply(s, m, response); err != nil {
+		log.Printf("failed to send response message: guild=%s channel=%s trigger=%s err=%v", strings.TrimSpace(m.GuildID), strings.TrimSpace(m.ChannelID), strings.TrimSpace(m.ID), err)
+	}
 }
 
 func buildReplyMessageSend(trigger *discordgo.Message, content string) *discordgo.MessageSend {
-	content = strings.TrimSpace(content)
-	if trigger == nil {
-		return &discordgo.MessageSend{Content: content}
+	send := buildPlainMessageSend(content)
+	if trigger != nil {
+		send.Reference = trigger.Reference()
 	}
+	return send
+}
+
+func buildPlainMessageSend(content string) *discordgo.MessageSend {
+	content = strings.TrimSpace(content)
 	return &discordgo.MessageSend{
 		Content: content,
 		AllowedMentions: &discordgo.MessageAllowedMentions{
 			Parse:       []discordgo.AllowedMentionType{},
 			RepliedUser: false,
 		},
-		Reference: trigger.Reference(),
 	}
 }
 

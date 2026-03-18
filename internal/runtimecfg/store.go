@@ -22,6 +22,8 @@ type Data struct {
 	AllowedGuildIDs    []string                     `json:"allowed_guild_ids"`
 	AllowedChannelIDs  []string                     `json:"allowed_channel_ids"`
 	AllowedThreadIDs   []string                     `json:"allowed_thread_ids"`
+	ProactiveReply     bool                         `json:"proactive_reply"`
+	ProactiveChance    float64                      `json:"proactive_chance"`
 	WorldBookEntries   map[string]WorldBookEntry    `json:"worldbook_entries"`
 	GuildEmojiProfiles map[string]GuildEmojiProfile `json:"guild_emoji_profiles"`
 }
@@ -142,6 +144,8 @@ func (s *Store) loadOrCreate() error {
 		AllowedGuildIDs    flexibleIDs                  `json:"allowed_guild_ids"`
 		AllowedChannelIDs  flexibleIDs                  `json:"allowed_channel_ids"`
 		AllowedThreadIDs   flexibleIDs                  `json:"allowed_thread_ids"`
+		ProactiveReply     bool                         `json:"proactive_reply"`
+		ProactiveChance    float64                      `json:"proactive_chance"`
 		WorldBookEntries   map[string]WorldBookEntry    `json:"worldbook_entries"`
 		GuildEmojiProfiles map[string]GuildEmojiProfile `json:"guild_emoji_profiles"`
 	}
@@ -158,6 +162,8 @@ func (s *Store) loadOrCreate() error {
 		AllowedGuildIDs:    []string(parsed.AllowedGuildIDs),
 		AllowedChannelIDs:  []string(parsed.AllowedChannelIDs),
 		AllowedThreadIDs:   []string(parsed.AllowedThreadIDs),
+		ProactiveReply:     parsed.ProactiveReply,
+		ProactiveChance:    parsed.ProactiveChance,
 		WorldBookEntries:   parsed.WorldBookEntries,
 		GuildEmojiProfiles: parsed.GuildEmojiProfiles,
 	}
@@ -429,6 +435,33 @@ func (s *Store) SpeechScope() (string, []string, []string, []string) {
 		append([]string(nil), s.data.AllowedThreadIDs...)
 }
 
+func (s *Store) ProactiveReplyConfig() (bool, float64) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.data.ProactiveReply, s.data.ProactiveChance
+}
+
+func (s *Store) SetProactiveReplyEnabled(enabled bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.data.ProactiveReply = enabled
+	return s.persistLocked()
+}
+
+func (s *Store) SetProactiveReplyChance(chance float64) error {
+	if chance < 0 || chance > 100 {
+		return errors.New("主动回复概率必须在 0 到 100 之间")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.data.ProactiveChance = chance
+	return s.persistLocked()
+}
+
 func (s *Store) SetSpeechMode(mode string) error {
 	mode = normalizeSpeechMode(mode)
 	if mode == "" {
@@ -446,7 +479,21 @@ func (s *Store) SetAllowedGuildIDs(ids []string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.data.AllowedGuildIDs = append([]string(nil), ids...)
+	s.data.AllowedGuildIDs = normalizeIDs(ids)
+	return s.persistLocked()
+}
+
+func (s *Store) AddAllowedGuildID(id string) error {
+	id = normalizeID(id)
+	if id == "" {
+		return errors.New("服务器 ID 不能为空")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.data.SpeechMode = SpeechModeAllowlist
+	s.data.AllowedGuildIDs = normalizeIDs(append(s.data.AllowedGuildIDs, id))
 	return s.persistLocked()
 }
 
@@ -454,7 +501,21 @@ func (s *Store) SetAllowedChannelIDs(ids []string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.data.AllowedChannelIDs = append([]string(nil), ids...)
+	s.data.AllowedChannelIDs = normalizeIDs(ids)
+	return s.persistLocked()
+}
+
+func (s *Store) AddAllowedChannelID(id string) error {
+	id = normalizeID(id)
+	if id == "" {
+		return errors.New("频道 ID 不能为空")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.data.SpeechMode = SpeechModeAllowlist
+	s.data.AllowedChannelIDs = normalizeIDs(append(s.data.AllowedChannelIDs, id))
 	return s.persistLocked()
 }
 
@@ -462,7 +523,21 @@ func (s *Store) SetAllowedThreadIDs(ids []string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.data.AllowedThreadIDs = append([]string(nil), ids...)
+	s.data.AllowedThreadIDs = normalizeIDs(ids)
+	return s.persistLocked()
+}
+
+func (s *Store) AddAllowedThreadID(id string) error {
+	id = normalizeID(id)
+	if id == "" {
+		return errors.New("子区 ID 不能为空")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.data.SpeechMode = SpeechModeAllowlist
+	s.data.AllowedThreadIDs = normalizeIDs(append(s.data.AllowedThreadIDs, id))
 	return s.persistLocked()
 }
 
@@ -491,7 +566,7 @@ func (s *Store) AllowsSpeech(guildID, channelID, threadID string) bool {
 		}
 		return false
 	default:
-		return true
+		return false
 	}
 }
 
@@ -520,10 +595,12 @@ func defaultData() Data {
 		SuperAdminIDs:      []string{},
 		AdminIDs:           []string{},
 		Personas:           map[string]string{},
-		SpeechMode:         SpeechModeAll,
+		SpeechMode:         SpeechModeAllowlist,
 		AllowedGuildIDs:    []string{},
 		AllowedChannelIDs:  []string{},
 		AllowedThreadIDs:   []string{},
+		ProactiveReply:     false,
+		ProactiveChance:    0,
 		WorldBookEntries:   map[string]WorldBookEntry{},
 		GuildEmojiProfiles: map[string]GuildEmojiProfile{},
 	}
@@ -547,6 +624,7 @@ func normalizeData(data *Data) {
 	data.AllowedGuildIDs = normalizeIDs(data.AllowedGuildIDs)
 	data.AllowedChannelIDs = normalizeIDs(data.AllowedChannelIDs)
 	data.AllowedThreadIDs = normalizeIDs(data.AllowedThreadIDs)
+	data.ProactiveChance = normalizeProbability(data.ProactiveChance)
 
 	if data.Personas == nil {
 		data.Personas = map[string]string{}
@@ -628,14 +706,23 @@ func normalizeName(name string) string {
 
 func normalizeSpeechMode(mode string) string {
 	switch strings.ToLower(strings.TrimSpace(mode)) {
-	case "", SpeechModeAll:
-		return SpeechModeAll
+	case "", SpeechModeAll, SpeechModeAllowlist:
+		return SpeechModeAllowlist
 	case SpeechModeNone:
 		return SpeechModeNone
-	case SpeechModeAllowlist:
-		return SpeechModeAllowlist
 	default:
 		return ""
+	}
+}
+
+func normalizeProbability(probability float64) float64 {
+	switch {
+	case probability < 0:
+		return 0
+	case probability > 100:
+		return 100
+	default:
+		return probability
 	}
 }
 

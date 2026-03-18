@@ -87,6 +87,67 @@ func TestBuildChatMessagesIncludesImageParts(t *testing.T) {
 	}
 }
 
+func TestBuildChatMessagesUsesPlainAssistantHistory(t *testing.T) {
+	recent := []memory.MessageRecord{
+		{
+			Role:    "assistant",
+			Content: "这是一条普通回复",
+			Time:    time.Date(2026, 3, 18, 6, 7, 8, 0, time.UTC),
+		},
+	}
+
+	messages := buildChatMessages("system", "", "", recent, nil)
+	if len(messages) != 2 {
+		t.Fatalf("expected 2 chat messages, got %d", len(messages))
+	}
+	if messages[1].Role != "assistant" {
+		t.Fatalf("expected assistant role, got %q", messages[1].Role)
+	}
+	if messages[1].Content != "这是一条普通回复" {
+		t.Fatalf("unexpected assistant content: %q", messages[1].Content)
+	}
+	if strings.Contains(messages[1].Content, "时间(UTC+8):") || strings.Contains(messages[1].Content, "发送者: 机器人") {
+		t.Fatalf("assistant history leaked metadata into prompt: %q", messages[1].Content)
+	}
+}
+
+func TestShouldProactiveReplyRespectsProbability(t *testing.T) {
+	runtimeStore := newTestRuntimeStore(t, `{
+  "super_admin_ids": ["owner-1"],
+  "admin_ids": [],
+  "personas": {},
+  "active_persona": "",
+  "system_prompt": "",
+  "proactive_reply": true,
+  "proactive_chance": 25
+}`)
+
+	handler := NewHandler(
+		config.BotConfig{SystemPrompt: "基础 system prompt"},
+		func(ctx context.Context, messages []openai.ChatMessage) (string, error) {
+			return "ok", nil
+		},
+		func(ctx context.Context, input string) ([]float64, error) {
+			return []float64{1, 2, 3}, nil
+		},
+		nil,
+		memory.NewStore(func(ctx context.Context, input string) ([]float64, error) {
+			return []float64{1, 2, 3}, nil
+		}),
+		runtimeStore,
+	)
+
+	handler.randFloat64 = func() float64 { return 0.2 }
+	if !handler.ShouldProactiveReply() {
+		t.Fatal("expected proactive reply to trigger at 20% < 25%")
+	}
+
+	handler.randFloat64 = func() float64 { return 0.3 }
+	if handler.ShouldProactiveReply() {
+		t.Fatal("expected proactive reply to skip at 30% >= 25%")
+	}
+}
+
 func TestHandleSlashCommandAdminCommandsAndPromptInjection(t *testing.T) {
 	runtimeStore := newTestRuntimeStore(t, `{
   "super_admin_ids": ["owner-1"],

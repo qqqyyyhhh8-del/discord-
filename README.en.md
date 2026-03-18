@@ -2,11 +2,14 @@
 
 [简体中文](README.md) | [English](README.en.md)
 
+Current version: `v0.3.0`  
+See [CHANGELOG.md](CHANGELOG.md) for release notes.
+
 This is a Discord bot built with Go + Discordgo. It includes:
 - Basic chat via OpenAI-compatible APIs
 - Automatic conversation summarization to reduce context growth
 - Simple RAG retrieval with embeddings and optional rerank
-- Slash-based management panels for personas, speech scope, and guild emojis
+- Slash-based management for personas, allowed speaking scopes, guild emojis, and proactive replies
 - Worldbook injection with persistent guild emoji summaries
 
 ## Features
@@ -17,6 +20,8 @@ This is a Discord bot built with Go + Discordgo. It includes:
 - **Auto summary**: Generates summaries after the message count crosses a threshold.
 - **RAG retrieval**: Embeds historical user messages, retrieves relevant items, and optionally reranks them.
 - **Emoji management**: Admins can run incremental analysis or full rebuild from the `/emoji` panel. The resulting emoji usage summary is stored in the worldbook for future replies.
+- **Allowed speaking scope**: By default the bot is not allowed to speak in any guild, channel, or thread. Admins must run `/setup server`, `/setup channel`, or `/setup thread` directly in the target location to allow the current guild, current channel, or current thread.
+- **Proactive replies**: Admins can configure an enable switch and probability from the `/proactive` panel. When enabled, the bot may reply to ordinary guild messages even without a mention, but it still obeys the `/setup` allowlist.
 
 ## Environment Variables
 | Variable | Description |
@@ -64,10 +69,12 @@ If `BOT_CONFIG_FILE` does not exist, it will be created automatically on startup
   "personas": {},
   "active_persona": "",
   "system_prompt": "",
-  "speech_mode": "all",
+  "speech_mode": "allowlist",
   "allowed_guild_ids": [],
   "allowed_channel_ids": [],
   "allowed_thread_ids": [],
+  "proactive_reply": false,
+  "proactive_chance": 0,
   "worldbook_entries": {},
   "guild_emoji_profiles": {}
 }
@@ -77,10 +84,12 @@ If `BOT_CONFIG_FILE` does not exist, it will be created automatically on startup
 - `admin_ids` can be edited in the config file or granted/revoked by a super admin through slash commands.
 - `personas` stores persona prompts.
 - `system_prompt` stores extra system prompt content, such as jailbreak-style policy overrides.
-- `speech_mode` controls where the bot is allowed to speak: `all`, `none`, or `allowlist`.
+- `speech_mode` currently defaults to `allowlist`; the bot only speaks when a location matches the configured allowlist.
 - `allowed_guild_ids` is the allowlist of guild IDs.
 - `allowed_channel_ids` is the allowlist of channel IDs.
 - `allowed_thread_ids` is the allowlist of thread/forum post IDs.
+- `proactive_reply` controls whether proactive replies are enabled.
+- `proactive_chance` is the proactive reply probability, expressed as a percentage from `0` to `100`.
 - `worldbook_entries` stores worldbook entries. Guild emoji analysis currently writes here automatically.
 - `guild_emoji_profiles` stores analyzed emoji IDs, summaries, the last operator, and timestamps for each guild.
 
@@ -88,10 +97,15 @@ If `BOT_CONFIG_FILE` does not exist, it will be created automatically on startup
 - `/help`: show command help
 - `/persona`: open the all-in-one persona management panel
   The panel supports viewing, switching, creating/overwriting, editing the current persona, deleting the current persona, clearing the active persona, and interactive controls.
-- `/speech`: open the speech scope management panel
-  The panel supports switching between all / none / allowlist and editing allowed guild IDs, channel IDs, and thread IDs.
+- `/setup show`: show the current allowed speaking scope
+- `/setup server`: allow the current guild
+- `/setup channel`: allow the current channel
+- `/setup thread`: allow the current thread
+- `/setup clear`: clear every allowed speaking scope entry
 - `/emoji`: open the guild emoji management panel
   The panel supports incremental analysis, full rebuild, refresh, and worldbook preview. Emoji analysis batches emojis in groups of 16 and sends them to the model as 4x4 image sheets.
+- `/proactive`: open the proactive reply management panel
+  The panel supports enable, disable, and probability editing. It can only be enabled when the current location has already been allowed through `/setup`.
 - `/system show`: show the extra system prompt
 - `/system set prompt:<prompt>`: set the extra system prompt
 - `/system clear`: clear the extra system prompt
@@ -103,10 +117,11 @@ If `BOT_CONFIG_FILE` does not exist, it will be created automatically on startup
 - Enable **Message Content Intent** in the Discord developer portal.
 - In guilds, use `@bot your message` or reply directly to the bot to trigger a response.
 - The bot shows `typing` while it is processing a reply.
+- On first start, the bot will not speak in any guild location until `/setup` is configured.
 - Management has been moved to slash commands; old message-prefix commands such as `!persona`, `!system`, and `!admin` are not used anymore.
 - `/persona` opens as an ephemeral panel by default. Regular users can view it; admins and super admins can operate it.
-- `/speech` opens as an ephemeral panel by default. Only admins and super admins can operate it.
 - `/emoji` opens as an ephemeral panel by default. Only admins and super admins can trigger emoji analysis.
+- `/proactive` opens as an ephemeral panel by default. Only admins and super admins can operate it.
 - If `/emoji` analysis times out, check the response speed of your OpenAI-compatible endpoint. If needed, set `OPENAI_HTTP_TIMEOUT_SECONDS=600` in `.env`.
 - On startup, the bot clears old slash commands in the current scope before re-registering them in bulk.
 
