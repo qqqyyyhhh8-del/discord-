@@ -15,17 +15,17 @@ import (
 type Data struct {
 	SuperAdminIDs      []string                     `json:"super_admin_ids"`
 	AdminIDs           []string                     `json:"admin_ids"`
-	Personas           map[string]string            `json:"personas"`
-	ActivePersona      string                       `json:"active_persona"`
+	Personas           map[string]string            `json:"personas,omitempty"`
+	ActivePersona      string                       `json:"active_persona,omitempty"`
 	SystemPrompt       string                       `json:"system_prompt"`
 	SpeechMode         string                       `json:"speech_mode"`
 	AllowedGuildIDs    []string                     `json:"allowed_guild_ids"`
 	AllowedChannelIDs  []string                     `json:"allowed_channel_ids"`
 	AllowedThreadIDs   []string                     `json:"allowed_thread_ids"`
-	ProactiveReply     bool                         `json:"proactive_reply"`
-	ProactiveChance    float64                      `json:"proactive_chance"`
+	ProactiveReply     bool                         `json:"proactive_reply,omitempty"`
+	ProactiveChance    float64                      `json:"proactive_chance,omitempty"`
 	WorldBookEntries   map[string]WorldBookEntry    `json:"worldbook_entries"`
-	GuildEmojiProfiles map[string]GuildEmojiProfile `json:"guild_emoji_profiles"`
+	GuildEmojiProfiles map[string]GuildEmojiProfile `json:"guild_emoji_profiles,omitempty"`
 }
 
 type WorldBookEntry struct {

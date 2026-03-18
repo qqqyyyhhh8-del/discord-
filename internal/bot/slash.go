@@ -8,15 +8,11 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
-func slashCommands() []*discordgo.ApplicationCommand {
-	return []*discordgo.ApplicationCommand{
+func slashCommands(pluginCommands []*discordgo.ApplicationCommand) []*discordgo.ApplicationCommand {
+	commands := []*discordgo.ApplicationCommand{
 		{
 			Name:        "help",
 			Description: "查看机器人管理命令帮助",
-		},
-		{
-			Name:        "persona",
-			Description: "打开一站式人设管理面板",
 		},
 		{
 			Name:        "system",
@@ -116,14 +112,138 @@ func slashCommands() []*discordgo.ApplicationCommand {
 			},
 		},
 		{
-			Name:        "emoji",
-			Description: "打开服务器表情管理面板",
-		},
-		{
-			Name:        "proactive",
-			Description: "打开主动回复管理面板",
+			Name:        "plugin",
+			Description: "管理外部插件生态",
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Type:        discordgo.ApplicationCommandOptionSubCommand,
+					Name:        "list",
+					Description: "查看已安装插件",
+				},
+				{
+					Type:        discordgo.ApplicationCommandOptionSubCommand,
+					Name:        "install",
+					Description: "通过 Git 仓库安装插件",
+					Options: []*discordgo.ApplicationCommandOption{
+						{
+							Type:        discordgo.ApplicationCommandOptionString,
+							Name:        "repo",
+							Description: "Git 仓库地址或本地 Git 仓库路径",
+							Required:    true,
+						},
+						{
+							Type:        discordgo.ApplicationCommandOptionString,
+							Name:        "ref",
+							Description: "可选，分支、标签或提交",
+						},
+						{
+							Type:        discordgo.ApplicationCommandOptionString,
+							Name:        "path",
+							Description: "可选，插件在仓库内的子目录",
+						},
+					},
+				},
+				{
+					Type:        discordgo.ApplicationCommandOptionSubCommand,
+					Name:        "upgrade",
+					Description: "升级已安装插件",
+					Options: []*discordgo.ApplicationCommandOption{
+						{
+							Type:        discordgo.ApplicationCommandOptionString,
+							Name:        "plugin",
+							Description: "插件 ID",
+							Required:    true,
+						},
+						{
+							Type:        discordgo.ApplicationCommandOptionString,
+							Name:        "ref",
+							Description: "可选，新的分支、标签或提交",
+						},
+					},
+				},
+				{
+					Type:        discordgo.ApplicationCommandOptionSubCommand,
+					Name:        "remove",
+					Description: "卸载插件",
+					Options: []*discordgo.ApplicationCommandOption{
+						{
+							Type:        discordgo.ApplicationCommandOptionString,
+							Name:        "plugin",
+							Description: "插件 ID",
+							Required:    true,
+						},
+					},
+				},
+				{
+					Type:        discordgo.ApplicationCommandOptionSubCommand,
+					Name:        "enable",
+					Description: "全局启用插件",
+					Options: []*discordgo.ApplicationCommandOption{
+						{
+							Type:        discordgo.ApplicationCommandOptionString,
+							Name:        "plugin",
+							Description: "插件 ID",
+							Required:    true,
+						},
+					},
+				},
+				{
+					Type:        discordgo.ApplicationCommandOptionSubCommand,
+					Name:        "disable",
+					Description: "全局禁用插件",
+					Options: []*discordgo.ApplicationCommandOption{
+						{
+							Type:        discordgo.ApplicationCommandOptionString,
+							Name:        "plugin",
+							Description: "插件 ID",
+							Required:    true,
+						},
+					},
+				},
+				{
+					Type:        discordgo.ApplicationCommandOptionSubCommand,
+					Name:        "allow_here",
+					Description: "允许插件在当前服务器启用",
+					Options: []*discordgo.ApplicationCommandOption{
+						{
+							Type:        discordgo.ApplicationCommandOptionString,
+							Name:        "plugin",
+							Description: "插件 ID",
+							Required:    true,
+						},
+					},
+				},
+				{
+					Type:        discordgo.ApplicationCommandOptionSubCommand,
+					Name:        "deny_here",
+					Description: "禁止插件在当前服务器启用",
+					Options: []*discordgo.ApplicationCommandOption{
+						{
+							Type:        discordgo.ApplicationCommandOptionString,
+							Name:        "plugin",
+							Description: "插件 ID",
+							Required:    true,
+						},
+					},
+				},
+				{
+					Type:        discordgo.ApplicationCommandOptionSubCommand,
+					Name:        "permissions",
+					Description: "查看插件能力授权",
+					Options: []*discordgo.ApplicationCommandOption{
+						{
+							Type:        discordgo.ApplicationCommandOptionString,
+							Name:        "plugin",
+							Description: "插件 ID",
+							Required:    true,
+						},
+					},
+				},
+			},
 		},
 	}
+	commands = append(commands, pluginCommands...)
+	return commands
 }
 
 func (h *Handler) HandleSlashCommand(ctx context.Context, authorID string, data discordgo.ApplicationCommandInteractionData) (string, bool, error) {

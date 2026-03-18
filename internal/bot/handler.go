@@ -15,7 +15,9 @@ import (
 	"discordbot/internal/config"
 	"discordbot/internal/memory"
 	"discordbot/internal/openai"
+	"discordbot/internal/pluginhost"
 	"discordbot/internal/runtimecfg"
+	"discordbot/pkg/pluginapi"
 )
 
 const (
@@ -30,13 +32,14 @@ type EmbedFn func(ctx context.Context, input string) ([]float64, error)
 type RerankFn func(ctx context.Context, query string, documents []string, topN int) ([]string, error)
 
 type Handler struct {
-	cfg          config.BotConfig
-	chatFn       ChatFn
-	embedFn      EmbedFn
-	rerankFn     RerankFn
-	store        *memory.Store
-	runtimeStore *runtimecfg.Store
-	httpClient   *http.Client
+	cfg           config.BotConfig
+	chatFn        ChatFn
+	embedFn       EmbedFn
+	rerankFn      RerankFn
+	store         *memory.Store
+	runtimeStore  *runtimecfg.Store
+	httpClient    *http.Client
+	pluginManager *pluginhost.Manager
 
 	emojiMu        sync.Mutex
 	emojiAnalyzing map[string]struct{}
@@ -55,6 +58,13 @@ func NewHandler(cfg config.BotConfig, chatFn ChatFn, embedFn EmbedFn, rerankFn R
 		emojiAnalyzing: map[string]struct{}{},
 		randFloat64:    rand.Float64,
 	}
+}
+
+func (h *Handler) SetPluginManager(manager *pluginhost.Manager) {
+	if h == nil {
+		return
+	}
+	h.pluginManager = manager
 }
 
 func (h *Handler) HandleMessage(ctx context.Context, channelID, authorID, content string) (string, error) {
@@ -108,10 +118,15 @@ func (h *Handler) HandleMessageRecord(ctx context.Context, channelID string, rec
 	}
 
 	systemPrompt, personaPrompt := h.runtimeStore.ComposePromptsForGuild(h.cfg.SystemPrompt, record.GuildID)
-	response, err := h.chatFn(ctx, buildChatMessages(systemPrompt, personaPrompt, summary, recent, retrieved))
+	if h.pluginManager != nil && h.pluginManager.CanHandleSlashCommand("persona") {
+		personaPrompt = ""
+	}
+	pluginBlocks := h.buildPluginPromptBlocks(ctx, systemPrompt, personaPrompt, summary, recent, retrieved, record)
+	response, err := h.chatFn(ctx, buildChatMessages(systemPrompt, personaPrompt, summary, recent, retrieved, pluginBlocks))
 	if err != nil {
 		return "", err
 	}
+	response = h.postprocessPluginResponse(ctx, record, response)
 	h.store.AddRecord(ctx, channelID, memory.MessageRecord{
 		Role:    "assistant",
 		Content: response,
@@ -345,7 +360,7 @@ func summarizationPrompt(summary string, messages []memory.MessageRecord) []open
 	}
 }
 
-func buildChatMessages(systemPrompt, personaPrompt, summary string, recent []memory.MessageRecord, retrieved []string) []openai.ChatMessage {
+func buildChatMessages(systemPrompt, personaPrompt, summary string, recent []memory.MessageRecord, retrieved []string, blocks []pluginapi.PromptBlock) []openai.ChatMessage {
 	messages := []openai.ChatMessage{{Role: "system", Content: systemPrompt}}
 	if personaPrompt != "" {
 		messages = append(messages, openai.ChatMessage{
@@ -367,6 +382,24 @@ func buildChatMessages(systemPrompt, personaPrompt, summary string, recent []mem
 		messages = append(messages, openai.ChatMessage{
 			Role:    "system",
 			Content: "相关记忆(仅供参考):\n\n" + strings.Join(memories, "\n\n"),
+		})
+	}
+	return buildChatMessagesWithPromptBlocks(messages, recent, blocks)
+}
+
+func buildChatMessagesWithPromptBlocks(messages []openai.ChatMessage, recent []memory.MessageRecord, blocks []pluginapi.PromptBlock) []openai.ChatMessage {
+	for _, block := range blocks {
+		role := strings.TrimSpace(block.Role)
+		if role == "" {
+			role = "system"
+		}
+		content := strings.TrimSpace(block.Content)
+		if content == "" {
+			continue
+		}
+		messages = append(messages, openai.ChatMessage{
+			Role:    role,
+			Content: content,
 		})
 	}
 	for _, msg := range recent {
@@ -400,6 +433,50 @@ func renderMessageForLLM(msg memory.MessageRecord) string {
 		return strings.TrimSpace(msg.Content)
 	}
 	return msg.RenderForModel()
+}
+
+func (h *Handler) buildPluginPromptBlocks(ctx context.Context, systemPrompt, personaPrompt, summary string, recent []memory.MessageRecord, retrieved []string, record memory.MessageRecord) []pluginapi.PromptBlock {
+	if h == nil || h.pluginManager == nil {
+		return nil
+	}
+
+	history := make([]pluginapi.PromptConversationMessage, 0, len(recent))
+	for _, item := range recent {
+		history = append(history, pluginapi.PromptConversationMessage{
+			Role:    strings.TrimSpace(item.Role),
+			Content: renderMessageForLLM(item),
+		})
+	}
+
+	blocks, err := h.pluginManager.BuildPromptBlocks(ctx, pluginapi.PromptBuildRequest{
+		CurrentMessage:       pluginMessageContextFromRecord(record),
+		CurrentSystemPrompt:  strings.TrimSpace(systemPrompt),
+		CurrentPersonaPrompt: strings.TrimSpace(personaPrompt),
+		Summary:              strings.TrimSpace(summary),
+		Retrieved:            append([]string(nil), retrieved...),
+		Recent:               history,
+	})
+	if err != nil {
+		log.Printf("plugin prompt build error: %v", err)
+		return nil
+	}
+	return blocks
+}
+
+func (h *Handler) postprocessPluginResponse(ctx context.Context, record memory.MessageRecord, response string) string {
+	if h == nil || h.pluginManager == nil || strings.TrimSpace(response) == "" {
+		return strings.TrimSpace(response)
+	}
+
+	postprocessed, err := h.pluginManager.PostprocessResponse(ctx, pluginapi.ResponsePostprocessRequest{
+		CurrentMessage: pluginMessageContextFromRecord(record),
+		Response:       strings.TrimSpace(response),
+	})
+	if err != nil {
+		log.Printf("plugin response postprocess error: %v", err)
+		return strings.TrimSpace(response)
+	}
+	return strings.TrimSpace(postprocessed)
 }
 
 func DefaultTimeout() time.Duration {
@@ -510,10 +587,8 @@ func superAdminDenied() string {
 func commandHelp() string {
 	parts := []string{
 		"可用 Slash 命令:",
-		personaHelp(),
 		setupHelp(),
-		emojiHelp(),
-		proactiveHelp(),
+		pluginHelp(),
 		systemHelp(),
 		adminHelp(),
 	}
@@ -548,6 +623,20 @@ func emojiHelp() string {
 
 func proactiveHelp() string {
 	return "/proactive 打开主动回复管理面板"
+}
+
+func pluginHelp() string {
+	return strings.Join([]string{
+		"/plugin list",
+		"/plugin install",
+		"/plugin upgrade",
+		"/plugin remove",
+		"/plugin enable",
+		"/plugin disable",
+		"/plugin allow_here",
+		"/plugin deny_here",
+		"/plugin permissions",
+	}, "\n")
 }
 
 func adminHelp() string {

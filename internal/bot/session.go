@@ -8,18 +8,19 @@ import (
 	"time"
 
 	"discordbot/internal/memory"
+	"discordbot/pkg/pluginapi"
 
 	"github.com/bwmarrin/discordgo"
 )
 
 const typingRefreshInterval = 8 * time.Second
-const emojiAnalysisTimeout = 3 * time.Minute
 
 type typingSender func(channelID string) error
 
 type Session struct {
 	session        *discordgo.Session
 	commandGuildID string
+	handler        *Handler
 }
 
 func NewSession(token, commandGuildID string, handler *Handler) (*Session, error) {
@@ -28,9 +29,28 @@ func NewSession(token, commandGuildID string, handler *Handler) (*Session, error
 		return nil, err
 	}
 	session.Identify.Intents = discordgo.IntentsGuildMessages | discordgo.IntentsDirectMessages | discordgo.IntentsMessageContent
+	wrapper := &Session{
+		session:        session,
+		commandGuildID: commandGuildID,
+		handler:        handler,
+	}
+	if handler != nil && handler.pluginManager != nil {
+		handler.pluginManager.SetSendMessageFn(wrapper.sendPluginMessage)
+		handler.pluginManager.SetReplyToMessageFn(wrapper.replyToPluginMessage)
+		handler.pluginManager.SetListGuildEmojisFn(wrapper.listGuildEmojis)
+		handler.pluginManager.SetRefreshCommandsFn(wrapper.registerCommands)
+	}
 	session.AddHandler(func(s *discordgo.Session, m *discordgo.MessageCreate) {
 		if m.Author == nil || m.Author.Bot {
 			return
+		}
+
+		if handler != nil && handler.pluginManager != nil {
+			if pluginContent, ok := pluginEventContentForMessage(m); ok {
+				ctx, cancel := context.WithTimeout(context.Background(), DefaultTimeout())
+				handler.pluginManager.DispatchMessage(ctx, pluginMessageEventFromDiscord(s, m, pluginContent))
+				cancel()
+			}
 		}
 
 		content, ok := promptContentForMessage(s, m)
@@ -39,6 +59,10 @@ func NewSession(token, commandGuildID string, handler *Handler) (*Session, error
 				return
 			}
 			handleIncomingMessage(s, m, handler, content)
+			return
+		}
+
+		if handler != nil && handler.pluginManager != nil && handler.pluginManager.CanHandleSlashCommand("proactive") {
 			return
 		}
 
@@ -59,36 +83,43 @@ func NewSession(token, commandGuildID string, handler *Handler) (*Session, error
 		switch i.Type {
 		case discordgo.InteractionApplicationCommand:
 			commandData := i.ApplicationCommandData()
-			if commandData.Name == "persona" {
-				response, err := handler.PersonaPanelCommandResponse(interactionUserID(i))
-				if err != nil {
-					response = simpleEphemeralInteractionResponse("抱歉，我现在无法打开人设面板。")
-				}
-				_ = s.InteractionRespond(i.Interaction, response)
-				return
-			}
-			if commandData.Name == "emoji" {
-				response, err := handler.EmojiPanelCommandResponse(interactionUserID(i), i.GuildID, guildNameFromSession(s, i.GuildID))
-				if err != nil {
-					response = simpleEphemeralInteractionResponse("抱歉，我现在无法打开表情管理面板。")
-				}
-				_ = s.InteractionRespond(i.Interaction, response)
-				return
-			}
-			if commandData.Name == "proactive" {
-				response, err := handler.ProactivePanelCommandResponse(interactionUserID(i), speechLocationForInteraction(s, i))
-				if err != nil {
-					response = simpleEphemeralInteractionResponse("抱歉，我现在无法打开主动回复面板。")
-				}
-				_ = s.InteractionRespond(i.Interaction, response)
-				return
-			}
 			if commandData.Name == "setup" {
 				response, err := handler.handleSetupCommand(interactionUserID(i), speechLocationForInteraction(s, i), commandData.Options)
 				if err != nil {
 					response = "抱歉，我现在无法保存这个允许发言范围设置。"
 				}
 				_ = respondToInteraction(s, i.Interaction, response, true)
+				return
+			}
+			if commandData.Name == "plugin" {
+				_ = s.InteractionRespond(i.Interaction, deferredChannelMessageResponse(true))
+				go func(interaction *discordgo.Interaction, userID string, location speechLocation, options []*discordgo.ApplicationCommandInteractionDataOption) {
+					ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+					defer cancel()
+
+					response, _, err := handler.handlePluginCommand(ctx, userID, location, options)
+					if err != nil {
+						response = "抱歉，我现在无法处理这个插件命令。"
+					}
+					content := strings.TrimSpace(response)
+					if content == "" {
+						content = "已完成。"
+					}
+					_, _ = s.InteractionResponseEdit(interaction, &discordgo.WebhookEdit{
+						Content: &content,
+					})
+				}(i.Interaction, interactionUserID(i), speechLocationForInteraction(s, i), commandData.Options)
+				return
+			}
+			if handler != nil && handler.pluginManager != nil && handler.pluginManager.CanHandleSlashCommand(commandData.Name) {
+				ctx, cancel := context.WithTimeout(context.Background(), DefaultTimeout())
+				defer cancel()
+
+				response, err := handler.pluginManager.HandleSlashCommand(ctx, pluginSlashCommandRequestFromInteraction(s, i, commandData))
+				if err != nil {
+					response = denyPluginErrorInteractionResponse("抱歉，我现在无法处理这个插件命令。")
+				}
+				_ = s.InteractionRespond(i.Interaction, discordInteractionResponseFromPlugin(response))
 				return
 			}
 
@@ -106,69 +137,33 @@ func NewSession(token, commandGuildID string, handler *Handler) (*Session, error
 			_ = respondToInteraction(s, i.Interaction, response, ephemeral)
 		case discordgo.InteractionMessageComponent:
 			componentData := i.MessageComponentData()
-			if isPersonaInteractionCustomID(componentData.CustomID) {
-				response, err := handler.PersonaComponentResponse(interactionUserID(i), componentData)
-				if err != nil {
-					response = simpleEphemeralInteractionResponse("抱歉，我现在无法处理这个人设操作。")
-				}
-				_ = s.InteractionRespond(i.Interaction, response)
-				return
-			}
-			if isEmojiInteractionCustomID(componentData.CustomID) {
-				guildName := guildNameFromSession(s, i.GuildID)
-				if isEmojiAsyncInteractionCustomID(componentData.CustomID) {
-					_ = s.InteractionRespond(i.Interaction, deferredMessageUpdateResponse())
-					go func(interaction *discordgo.Interaction, authorID, guildID, guildName string, customID string) {
-						ctx, cancel := context.WithTimeout(context.Background(), emojiAnalysisTimeout)
-						defer cancel()
+			if handler != nil && handler.pluginManager != nil && handler.pluginManager.CanHandleComponent(componentData.CustomID) {
+				ctx, cancel := context.WithTimeout(context.Background(), DefaultTimeout())
+				defer cancel()
 
-						edit, err := handler.EmojiAnalysisEdit(ctx, authorID, guildID, guildName, customID, func(guildID string) ([]*discordgo.Emoji, error) {
-							return s.GuildEmojis(guildID)
-						})
-						if err != nil {
-							edit, _ = handler.emojiPanelEdit(authorID, guildID, guildName, "表情分析失败，请稍后再试。")
-						}
-						_ = editInteractionResponse(s, interaction, edit)
-					}(i.Interaction, interactionUserID(i), i.GuildID, guildName, componentData.CustomID)
-					return
-				}
-
-				response, err := handler.EmojiComponentResponse(interactionUserID(i), i.GuildID, guildName, componentData)
+				response, err := handler.pluginManager.HandleComponent(ctx, pluginComponentRequestFromInteraction(s, i, componentData))
 				if err != nil {
-					response = simpleEphemeralInteractionResponse("抱歉，我现在无法处理这个表情管理操作。")
+					response = denyPluginErrorInteractionResponse("抱歉，我现在无法处理这个插件交互。")
 				}
-				_ = s.InteractionRespond(i.Interaction, response)
-				return
-			}
-			if isProactiveInteractionCustomID(componentData.CustomID) {
-				response, err := handler.ProactiveComponentResponse(interactionUserID(i), speechLocationForInteraction(s, i), componentData)
-				if err != nil {
-					response = simpleEphemeralInteractionResponse("抱歉，我现在无法处理这个主动回复操作。")
-				}
-				_ = s.InteractionRespond(i.Interaction, response)
+				_ = s.InteractionRespond(i.Interaction, discordInteractionResponseFromPlugin(response))
 				return
 			}
 		case discordgo.InteractionModalSubmit:
 			modalData := i.ModalSubmitData()
-			if isPersonaInteractionCustomID(modalData.CustomID) {
-				response, err := handler.PersonaModalResponse(interactionUserID(i), modalData)
+			if handler != nil && handler.pluginManager != nil && handler.pluginManager.CanHandleModal(modalData.CustomID) {
+				ctx, cancel := context.WithTimeout(context.Background(), DefaultTimeout())
+				defer cancel()
+
+				response, err := handler.pluginManager.HandleModal(ctx, pluginModalRequestFromInteraction(s, i, modalData))
 				if err != nil {
-					response = simpleEphemeralInteractionResponse("抱歉，我现在无法保存这个人设。")
+					response = denyPluginErrorInteractionResponse("抱歉，我现在无法处理这个插件表单。")
 				}
-				_ = s.InteractionRespond(i.Interaction, response)
-				return
-			}
-			if isProactiveInteractionCustomID(modalData.CustomID) {
-				response, err := handler.ProactiveModalResponse(interactionUserID(i), speechLocationForInteraction(s, i), modalData)
-				if err != nil {
-					response = simpleEphemeralInteractionResponse("抱歉，我现在无法保存这个主动回复设置。")
-				}
-				_ = s.InteractionRespond(i.Interaction, response)
+				_ = s.InteractionRespond(i.Interaction, discordInteractionResponseFromPlugin(response))
 				return
 			}
 		}
 	})
-	return &Session{session: session, commandGuildID: commandGuildID}, nil
+	return wrapper, nil
 }
 
 func promptContentForMessage(s *discordgo.Session, m *discordgo.MessageCreate) (string, bool) {
@@ -215,6 +210,19 @@ func proactivePromptContentForMessage(m *discordgo.MessageCreate) (string, bool)
 		return "", false
 	}
 	if strings.TrimSpace(m.GuildID) == "" {
+		return "", false
+	}
+
+	content := strings.TrimSpace(m.Content)
+	hasVisualInput := discordMessageHasVisualInput(m.Message)
+	if content == "" && !hasVisualInput {
+		return "", false
+	}
+	return content, true
+}
+
+func pluginEventContentForMessage(m *discordgo.MessageCreate) (string, bool) {
+	if m == nil || m.Message == nil {
 		return "", false
 	}
 
@@ -368,6 +376,142 @@ func buildPlainMessageSend(content string) *discordgo.MessageSend {
 	}
 }
 
+func (s *Session) sendPluginMessage(ctx context.Context, request pluginapi.SendMessageRequest) error {
+	if s == nil || s.session == nil {
+		return fmt.Errorf("discord session is unavailable")
+	}
+
+	channelID := strings.TrimSpace(request.ThreadID)
+	if channelID == "" {
+		channelID = strings.TrimSpace(request.ChannelID)
+	}
+	if channelID == "" {
+		return fmt.Errorf("plugin message channel is required")
+	}
+
+	send := buildPlainMessageSend(request.Content)
+	if replyID := strings.TrimSpace(request.ReplyToMessageID); replyID != "" {
+		send.Reference = &discordgo.MessageReference{
+			MessageID: replyID,
+			ChannelID: channelID,
+			GuildID:   strings.TrimSpace(request.GuildID),
+		}
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := s.session.ChannelMessageSendComplex(channelID, send)
+		done <- err
+	}()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case err := <-done:
+		return err
+	}
+}
+
+func (s *Session) replyToPluginMessage(ctx context.Context, message pluginapi.MessageContext) error {
+	if s == nil || s.session == nil || s.handler == nil {
+		return fmt.Errorf("plugin core reply is unavailable")
+	}
+
+	channelID := strings.TrimSpace(message.Channel.ThreadID)
+	if channelID == "" {
+		channelID = strings.TrimSpace(message.Channel.ID)
+	}
+	if channelID == "" {
+		return fmt.Errorf("plugin reply target channel is required")
+	}
+
+	record := messageRecordFromPluginMessage(message)
+	stopTyping := startTypingLoop(ctx, channelID, func(channelID string) error {
+		return s.session.ChannelTyping(channelID)
+	}, typingRefreshInterval)
+	defer stopTyping()
+
+	response, err := s.handler.HandleMessageRecord(ctx, channelID, record)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(response) == "" {
+		return nil
+	}
+
+	send := buildPlainMessageSend(response)
+	if strings.TrimSpace(message.MessageID) != "" {
+		send.Reference = &discordgo.MessageReference{
+			MessageID: strings.TrimSpace(message.MessageID),
+			ChannelID: channelID,
+			GuildID:   strings.TrimSpace(message.Guild.ID),
+		}
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := s.session.ChannelMessageSendComplex(channelID, send)
+		if err == nil || send.Reference == nil {
+			done <- err
+			return
+		}
+
+		log.Printf("plugin reply send failed, retrying without message reference: guild=%s channel=%s trigger=%s err=%v", strings.TrimSpace(message.Guild.ID), channelID, strings.TrimSpace(message.MessageID), err)
+		_, retryErr := s.session.ChannelMessageSendComplex(channelID, buildPlainMessageSend(response))
+		done <- retryErr
+	}()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case err := <-done:
+		return err
+	}
+}
+
+func (s *Session) listGuildEmojis(ctx context.Context, guildID string) ([]pluginapi.GuildEmoji, error) {
+	if s == nil || s.session == nil {
+		return nil, fmt.Errorf("discord session is unavailable")
+	}
+	guildID = strings.TrimSpace(guildID)
+	if guildID == "" {
+		return nil, fmt.Errorf("guild id is required")
+	}
+
+	type result struct {
+		emojis []*discordgo.Emoji
+		err    error
+	}
+	done := make(chan result, 1)
+	go func() {
+		emojis, err := s.session.GuildEmojis(guildID)
+		done <- result{emojis: emojis, err: err}
+	}()
+
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case outcome := <-done:
+		if outcome.err != nil {
+			return nil, outcome.err
+		}
+		converted := make([]pluginapi.GuildEmoji, 0, len(outcome.emojis))
+		for _, emoji := range outcome.emojis {
+			if emoji == nil {
+				continue
+			}
+			converted = append(converted, pluginapi.GuildEmoji{
+				ID:       strings.TrimSpace(emoji.ID),
+				Name:     strings.TrimSpace(emoji.Name),
+				Animated: emoji.Animated,
+				URL:      emojiCDNURL(emoji.ID),
+				Syntax:   emojiSyntax(emoji.Name, emoji.ID, emoji.Animated),
+			})
+		}
+		return converted, nil
+	}
+}
+
 func startTypingLoop(ctx context.Context, channelID string, send typingSender, interval time.Duration) func() {
 	channelID = strings.TrimSpace(channelID)
 	if channelID == "" || send == nil {
@@ -409,20 +553,37 @@ func (s *Session) Open() error {
 	if err := s.session.Open(); err != nil {
 		return err
 	}
+	if appID, err := s.applicationID(); err == nil {
+		if s.handler != nil && s.handler.pluginManager != nil {
+			s.handler.pluginManager.SetBotUserID(appID)
+		}
+	}
 	if err := s.registerCommands(); err != nil {
 		_ = s.session.Close()
 		return err
+	}
+	if s.handler != nil && s.handler.pluginManager != nil {
+		if err := s.handler.pluginManager.Start(); err != nil {
+			_ = s.session.Close()
+			return err
+		}
 	}
 	return nil
 }
 
 func (s *Session) Close() error {
+	if s.handler != nil && s.handler.pluginManager != nil {
+		_ = s.handler.pluginManager.Close()
+	}
 	return s.session.Close()
 }
 
 func (s *Session) CloseWithContext(ctx context.Context) error {
 	done := make(chan error, 1)
 	go func() {
+		if s.handler != nil && s.handler.pluginManager != nil {
+			_ = s.handler.pluginManager.Close()
+		}
 		done <- s.session.Close()
 	}()
 	select {
@@ -449,7 +610,15 @@ func (s *Session) registerCommands() error {
 		}
 	}
 
-	_, err = s.session.ApplicationCommandBulkOverwrite(appID, s.commandGuildID, slashCommands())
+	pluginCommands := []*discordgo.ApplicationCommand{}
+	if s.handler != nil && s.handler.pluginManager != nil {
+		pluginCommands, err = s.handler.pluginManager.ApplicationCommands()
+		if err != nil {
+			return err
+		}
+	}
+
+	_, err = s.session.ApplicationCommandBulkOverwrite(appID, s.commandGuildID, slashCommands(pluginCommands))
 	return err
 }
 
@@ -510,6 +679,17 @@ func simpleEphemeralInteractionResponse(content string) *discordgo.InteractionRe
 func deferredMessageUpdateResponse() *discordgo.InteractionResponse {
 	return &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseDeferredMessageUpdate,
+	}
+}
+
+func deferredChannelMessageResponse(ephemeral bool) *discordgo.InteractionResponse {
+	data := &discordgo.InteractionResponseData{}
+	if ephemeral {
+		data.Flags = discordgo.MessageFlagsEphemeral
+	}
+	return &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
+		Data: data,
 	}
 }
 

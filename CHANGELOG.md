@@ -2,6 +2,43 @@
 
 All notable changes to this project will be documented in this file.
 
+## v0.5.0 - 2026-03-18
+
+### Added
+
+- Added the official plugin monorepo `discord-bot-plugins`, containing the first-party `persona`, `proactive`, and `emoji` plugins.
+- Added new host/plugin capabilities for core-powered replies, guild emoji listing, worldbook read/write, speech allowlist checks, richer interaction components, and admin role visibility in plugin context.
+
+### Changed
+
+- Migrated `/persona`, `/proactive`, and `/emoji` from built-in bot features into installable official plugins.
+- Updated the main README files to document the new plugin-based installation flow and link to the official plugin repository.
+- Bumped the host version to `v0.5.0`.
+
+### Fixed
+
+- Fixed a migration conflict where the core bot could still inject a legacy persona prompt after the official persona plugin was installed.
+- Fixed a migration conflict where the core bot could still run legacy proactive-reply logic after the official proactive plugin was installed.
+
+## v0.4.0 - 2026-03-18
+
+### Added
+
+- Added an external plugin host based on `JSON-RPC 2.0 over stdio`, with a shared `pkg/pluginapi` protocol package and Go SDK helpers for plugin authors.
+- Added plugin registry persistence under `plugins/registry.json`, per-plugin private storage, capability manifests, dynamic slash command registration, and runtime plugin process management.
+- Added `/plugin list|install|upgrade|remove|enable|disable|allow_here|deny_here|permissions` for plugin lifecycle management.
+- Added prompt-build and response-postprocess plugin hooks, plus message event dispatch for installed plugins.
+- Added an official example plugin at `examples/plugins/style-note` that demonstrates Git-installable prompt injection backed by plugin private storage.
+
+### Changed
+
+- Version bumped to `v0.4.0`.
+- Discord command registration now merges core commands with enabled plugin commands and refreshes after plugin install, upgrade, remove, or global enable/disable.
+
+### Fixed
+
+- Fixed plugin command and component prefix conflict detection so installed plugins cannot shadow core management routes.
+
 ## v0.3.0 - 2026-03-18
 
 ### Added

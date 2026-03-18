@@ -1,3 +1,4 @@
 .env
 bot_config.json
 discordbot
+plugins/

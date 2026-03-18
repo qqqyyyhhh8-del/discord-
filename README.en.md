@@ -2,14 +2,16 @@
 
 [简体中文](README.md) | [English](README.en.md)
 
-Current version: `v0.3.0`  
+Current version: `v0.5.0`  
 See [CHANGELOG.md](CHANGELOG.md) for release notes.
 
 This is a Discord bot built with Go + Discordgo. It includes:
 - Basic chat via OpenAI-compatible APIs
 - Automatic conversation summarization to reduce context growth
 - Simple RAG retrieval with embeddings and optional rerank
-- Slash-based management for personas, allowed speaking scopes, guild emojis, and proactive replies
+- Plugin-based persona, guild emoji, and proactive-reply extensions
+- Core slash management for speaking scopes, admins, and extra system prompt
+- External plugin hosting with Git-installed extensions
 - Worldbook injection with persistent guild emoji summaries
 
 ## Features
@@ -19,9 +21,20 @@ This is a Discord bot built with Go + Discordgo. It includes:
 - **Multimodal input**: Custom guild emojis in user messages are converted into images and sent to the chat model. Image attachments are also included as image input.
 - **Auto summary**: Generates summaries after the message count crosses a threshold.
 - **RAG retrieval**: Embeds historical user messages, retrieves relevant items, and optionally reranks them.
-- **Emoji management**: Admins can run incremental analysis or full rebuild from the `/emoji` panel. The resulting emoji usage summary is stored in the worldbook for future replies.
+- **Official plugins**: `/persona`, `/emoji`, and `/proactive` now live in the official `discord-bot-plugins` repository and are installed on demand.
 - **Allowed speaking scope**: By default the bot is not allowed to speak in any guild, channel, or thread. Admins must run `/setup server`, `/setup channel`, or `/setup thread` directly in the target location to allow the current guild, current channel, or current thread.
-- **Proactive replies**: Admins can configure an enable switch and probability from the `/proactive` panel. When enabled, the bot may reply to ordinary guild messages even without a mention, but it still obeys the `/setup` allowlist.
+- **Plugin ecosystem**: External process plugins can be installed from Git repositories. Plugins connect over JSON-RPC over stdio and can register slash commands, receive message events, inject prompt blocks, and postprocess model replies with capability checks.
+
+## Official Plugins
+- Official plugin repo: [`qqqyyyhhh8-del/discord-bot-plugins`](https://github.com/qqqyyyhhh8-del/discord-bot-plugins)
+- Install persona management:
+  `/plugin install repo:https://github.com/qqqyyyhhh8-del/discord-bot-plugins.git path:plugins/persona`
+- Install proactive replies:
+  `/plugin install repo:https://github.com/qqqyyyhhh8-del/discord-bot-plugins.git path:plugins/proactive`
+- Install guild emoji management:
+  `/plugin install repo:https://github.com/qqqyyyhhh8-del/discord-bot-plugins.git path:plugins/emoji`
+
+After installation, the host will register `/persona`, `/proactive`, and `/emoji` automatically.
 
 ## Environment Variables
 | Variable | Description |
@@ -40,6 +53,7 @@ This is a Discord bot built with Go + Discordgo. It includes:
 | `SYSTEM_PROMPT` | Optional base system prompt |
 | `BOT_CONFIG_FILE` | Runtime config file path (default: `bot_config.json`) |
 | `BOT_COMMAND_GUILD_ID` | Optional guild ID for slash command registration. If empty, commands are global |
+| `PLUGINS_DIR` | Plugin host working directory (default: `plugins`) containing the plugin registry and installed source trees |
 
 ## Quick Start
 1. Clone the repo and enter the directory:
@@ -66,46 +80,41 @@ If `BOT_CONFIG_FILE` does not exist, it will be created automatically on startup
 {
   "super_admin_ids": ["your_discord_user_id"],
   "admin_ids": [],
-  "personas": {},
-  "active_persona": "",
   "system_prompt": "",
   "speech_mode": "allowlist",
   "allowed_guild_ids": [],
   "allowed_channel_ids": [],
   "allowed_thread_ids": [],
-  "proactive_reply": false,
-  "proactive_chance": 0,
-  "worldbook_entries": {},
-  "guild_emoji_profiles": {}
+  "worldbook_entries": {}
 }
 ```
 
 - `super_admin_ids` can only be edited in the config file. Both string IDs and numeric Discord IDs are accepted.
 - `admin_ids` can be edited in the config file or granted/revoked by a super admin through slash commands.
-- `personas` stores persona prompts.
 - `system_prompt` stores extra system prompt content, such as jailbreak-style policy overrides.
 - `speech_mode` currently defaults to `allowlist`; the bot only speaks when a location matches the configured allowlist.
 - `allowed_guild_ids` is the allowlist of guild IDs.
 - `allowed_channel_ids` is the allowlist of channel IDs.
 - `allowed_thread_ids` is the allowlist of thread/forum post IDs.
-- `proactive_reply` controls whether proactive replies are enabled.
-- `proactive_chance` is the proactive reply probability, expressed as a percentage from `0` to `100`.
 - `worldbook_entries` stores worldbook entries. Guild emoji analysis currently writes here automatically.
-- `guild_emoji_profiles` stores analyzed emoji IDs, summaries, the last operator, and timestamps for each guild.
+- Older configs may still contain `personas`, `active_persona`, `proactive_reply`, `proactive_chance`, and `guild_emoji_profiles`; those are legacy compatibility fields from before the official-plugin migration. The official plugins now use plugin-private storage.
 
 ## Slash Commands
 - `/help`: show command help
-- `/persona`: open the all-in-one persona management panel
-  The panel supports viewing, switching, creating/overwriting, editing the current persona, deleting the current persona, clearing the active persona, and interactive controls.
 - `/setup show`: show the current allowed speaking scope
 - `/setup server`: allow the current guild
 - `/setup channel`: allow the current channel
 - `/setup thread`: allow the current thread
 - `/setup clear`: clear every allowed speaking scope entry
-- `/emoji`: open the guild emoji management panel
-  The panel supports incremental analysis, full rebuild, refresh, and worldbook preview. Emoji analysis batches emojis in groups of 16 and sends them to the model as 4x4 image sheets.
-- `/proactive`: open the proactive reply management panel
-  The panel supports enable, disable, and probability editing. It can only be enabled when the current location has already been allowed through `/setup`.
+- `/plugin list`: show installed plugins
+- `/plugin install repo:<repo> ref:<ref> path:<path>`: install a plugin from a Git repository; `path` is optional for monorepo subdirectories
+- `/plugin upgrade plugin:<id> ref:<ref>`: upgrade a plugin
+- `/plugin remove plugin:<id>`: uninstall a plugin
+- `/plugin enable plugin:<id>`: enable a plugin globally
+- `/plugin disable plugin:<id>`: disable a plugin globally
+- `/plugin allow_here plugin:<id>`: allow a plugin in the current guild
+- `/plugin deny_here plugin:<id>`: deny a plugin in the current guild
+- `/plugin permissions plugin:<id>`: show granted capabilities for a plugin
 - `/system show`: show the extra system prompt
 - `/system set prompt:<prompt>`: set the extra system prompt
 - `/system clear`: clear the extra system prompt
@@ -119,11 +128,18 @@ If `BOT_CONFIG_FILE` does not exist, it will be created automatically on startup
 - The bot shows `typing` while it is processing a reply.
 - On first start, the bot will not speak in any guild location until `/setup` is configured.
 - Management has been moved to slash commands; old message-prefix commands such as `!persona`, `!system`, and `!admin` are not used anymore.
-- `/persona` opens as an ephemeral panel by default. Regular users can view it; admins and super admins can operate it.
-- `/emoji` opens as an ephemeral panel by default. Only admins and super admins can trigger emoji analysis.
-- `/proactive` opens as an ephemeral panel by default. Only admins and super admins can operate it.
-- If `/emoji` analysis times out, check the response speed of your OpenAI-compatible endpoint. If needed, set `OPENAI_HTTP_TIMEOUT_SECONDS=600` in `.env`.
+- `/persona`, `/emoji`, and `/proactive` are now provided by official plugins. If a plugin is not installed, its slash command will not exist.
+- If the official `/emoji` plugin times out during analysis, check the response speed of your OpenAI-compatible endpoint. If needed, set `OPENAI_HTTP_TIMEOUT_SECONDS=600` in `.env`.
 - On startup, the bot clears old slash commands in the current scope before re-registering them in bulk.
+
+## Plugin Development
+
+- The shared protocol and Go SDK live in `pkg/pluginapi`.
+- Every plugin must provide a `plugin.json` manifest.
+- The current host supports slash commands, button/modal prefix routing, message hooks, prompt injection, response postprocessing, interval hooks, plugin-private storage, and capability-checked host calls.
+- An official example plugin is available in `examples/plugins/style-note`.
+- Example install command for the sample plugin in this repository:
+  `/plugin install repo:https://github.com/qqqyyyhhh8-del/discord-.git path:examples/plugins/style-note`
 
 ## License
 

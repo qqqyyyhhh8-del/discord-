@@ -13,6 +13,7 @@ import (
 	"discordbot/internal/config"
 	"discordbot/internal/memory"
 	"discordbot/internal/openai"
+	"discordbot/internal/pluginhost"
 	"discordbot/internal/runtimecfg"
 )
 
@@ -34,6 +35,20 @@ func main() {
 	}
 
 	handler := bot.NewHandler(cfg.Bot, openAI.Chat, openAI.Embed, rerankFn, store, runtimeStore)
+	pluginManager, err := pluginhost.NewManager(pluginhost.Config{
+		PluginsDir:                cfg.Bot.PluginsDir,
+		HostVersion:               buildinfo.Version,
+		RuntimeStore:              runtimeStore,
+		ChatFn:                    openAI.Chat,
+		EmbedFn:                   openAI.Embed,
+		RerankFn:                  pluginhost.RerankFn(rerankFn),
+		ReservedCommands:          bot.CoreSlashCommandNames(),
+		ReservedComponentPrefixes: bot.CoreComponentPrefixes(),
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	handler.SetPluginManager(pluginManager)
 
 	session, err := bot.NewSession(cfg.Bot.DiscordToken, cfg.Bot.CommandGuildID, handler)
 	if err != nil {

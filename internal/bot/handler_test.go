@@ -30,7 +30,7 @@ func TestBuildChatMessagesDoesNotDuplicateCurrentUserMessage(t *testing.T) {
 		{Role: "assistant", Content: "hi"},
 	}
 
-	messages := buildChatMessages("system", "persona", "", recent, nil)
+	messages := buildChatMessages("system", "persona", "", recent, nil, nil)
 
 	var helloCount int
 	var personaCount int
@@ -72,7 +72,7 @@ func TestBuildChatMessagesIncludesImageParts(t *testing.T) {
 		},
 	}
 
-	messages := buildChatMessages("system", "", "", recent, nil)
+	messages := buildChatMessages("system", "", "", recent, nil, nil)
 	if len(messages) != 2 {
 		t.Fatalf("expected 2 chat messages, got %d", len(messages))
 	}
@@ -96,7 +96,7 @@ func TestBuildChatMessagesUsesPlainAssistantHistory(t *testing.T) {
 		},
 	}
 
-	messages := buildChatMessages("system", "", "", recent, nil)
+	messages := buildChatMessages("system", "", "", recent, nil, nil)
 	if len(messages) != 2 {
 		t.Fatalf("expected 2 chat messages, got %d", len(messages))
 	}

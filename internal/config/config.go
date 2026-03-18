@@ -15,6 +15,7 @@ const (
 	defaultChatModel      = "gpt-4o-mini"
 	defaultEmbedModel     = "text-embedding-3-small"
 	defaultConfigFilePath = "bot_config.json"
+	defaultPluginsDir     = "plugins"
 )
 
 type OpenAIConfig struct {
@@ -35,6 +36,7 @@ type BotConfig struct {
 	SystemPrompt   string
 	ConfigFilePath string
 	CommandGuildID string
+	PluginsDir     string
 }
 
 type Config struct {
@@ -98,6 +100,10 @@ func Load() (Config, error) {
 		configFilePath = defaultConfigFilePath
 	}
 	commandGuildID := strings.TrimSpace(os.Getenv("BOT_COMMAND_GUILD_ID"))
+	pluginsDir := strings.TrimSpace(os.Getenv("PLUGINS_DIR"))
+	if pluginsDir == "" {
+		pluginsDir = defaultPluginsDir
+	}
 
 	return Config{
 		OpenAI: OpenAIConfig{
@@ -117,6 +123,7 @@ func Load() (Config, error) {
 			SystemPrompt:   systemPrompt,
 			ConfigFilePath: configFilePath,
 			CommandGuildID: commandGuildID,
+			PluginsDir:     pluginsDir,
 		},
 	}, nil
 }

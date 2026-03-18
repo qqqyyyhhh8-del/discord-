@@ -35,6 +35,7 @@ OPENAI_HTTP_TIMEOUT_SECONDS=600
 SYSTEM_PROMPT="测试 system prompt"
 BOT_CONFIG_FILE=runtime-config.json
 BOT_COMMAND_GUILD_ID=test-guild
+PLUGINS_DIR=test-plugins
 `
 	if err := os.WriteFile(filepath.Join(tempDir, ".env"), []byte(dotEnv), 0o600); err != nil {
 		t.Fatalf("write .env: %v", err)
@@ -55,6 +56,7 @@ BOT_COMMAND_GUILD_ID=test-guild
 		"SYSTEM_PROMPT",
 		"BOT_CONFIG_FILE",
 		"BOT_COMMAND_GUILD_ID",
+		"PLUGINS_DIR",
 	} {
 		restoreEnvKey(t, key, nil)
 	}
@@ -105,6 +107,9 @@ BOT_COMMAND_GUILD_ID=test-guild
 	}
 	if cfg.Bot.CommandGuildID != "test-guild" {
 		t.Fatalf("unexpected command guild id: %q", cfg.Bot.CommandGuildID)
+	}
+	if cfg.Bot.PluginsDir != "test-plugins" {
+		t.Fatalf("unexpected plugins dir: %q", cfg.Bot.PluginsDir)
 	}
 }
 
