@@ -626,17 +626,7 @@ func proactiveHelp() string {
 }
 
 func pluginHelp() string {
-	return strings.Join([]string{
-		"/plugin list",
-		"/plugin install",
-		"/plugin upgrade",
-		"/plugin remove",
-		"/plugin enable",
-		"/plugin disable",
-		"/plugin allow_here",
-		"/plugin deny_here",
-		"/plugin permissions",
-	}, "\n")
+	return "/plugin 打开插件管理面板"
 }
 
 func adminHelp() string {

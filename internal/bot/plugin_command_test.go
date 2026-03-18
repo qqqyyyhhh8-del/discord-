@@ -6,75 +6,127 @@ import (
 
 	"discordbot/internal/pluginhost"
 	"discordbot/pkg/pluginapi"
+
+	"github.com/bwmarrin/discordgo"
 )
 
-func TestPluginListEditUsesEmbeds(t *testing.T) {
-	edit := pluginListEdit([]pluginhost.InstalledPlugin{
-		{
-			ID:          "official_persona",
-			Name:        "Official Persona Plugin",
-			Version:     "v0.1.0",
-			Description: "Persona management",
-			Enabled:     true,
-			GuildMode:   pluginhost.GuildModeAll,
-			GrantedCaps: []pluginapi.Capability{pluginapi.CapabilityPluginStorage, pluginapi.CapabilityDiscordInteractionRespond},
-			Manifest: pluginapi.Manifest{
-				Commands: []pluginapi.CommandSpec{{Name: "persona", Description: "persona"}},
-			},
-		},
-	})
-
-	if edit == nil || edit.Embeds == nil {
-		t.Fatal("expected embeds edit")
-	}
-	embeds := *edit.Embeds
-	if len(embeds) < 2 {
-		t.Fatalf("expected summary and detail embeds, got %d", len(embeds))
-	}
-	if embeds[0].Title != "Plugin Control Center" {
-		t.Fatalf("unexpected summary title: %q", embeds[0].Title)
-	}
-	if len(embeds[1].Fields) == 0 {
-		t.Fatal("expected detail fields")
-	}
-	if !strings.Contains(embeds[1].Fields[0].Value, "`/persona`") {
-		t.Fatalf("expected command list in detail field, got %q", embeds[1].Fields[0].Value)
-	}
-}
-
-func TestPluginPermissionsEditIncludesCapabilities(t *testing.T) {
-	edit := pluginPermissionsEdit(pluginhost.InstalledPlugin{
+func TestBuildPluginPanelEmbedIncludesSelectedPluginDetails(t *testing.T) {
+	plugin := pluginhost.InstalledPlugin{
 		ID:          "official_emoji",
 		Name:        "Official Emoji Plugin",
 		Version:     "v0.1.0",
 		Description: "Emoji analysis",
+		Repo:        "https://github.com/example/discord-bot-plugins.git",
+		Ref:         "main",
+		SourcePath:  "plugins/emoji",
 		Enabled:     true,
 		GuildMode:   pluginhost.GuildModeAllowlist,
-		GuildIDs:    []string{"123", "456"},
+		GuildIDs:    []string{"guild-1"},
 		GrantedCaps: []pluginapi.Capability{pluginapi.CapabilityDiscordReadGuildEmojis, pluginapi.CapabilityWorldBookWrite},
 		Manifest: pluginapi.Manifest{
 			Commands: []pluginapi.CommandSpec{{Name: "emoji", Description: "emoji"}},
 		},
-	})
-
-	if edit == nil || edit.Embeds == nil || len(*edit.Embeds) != 1 {
-		t.Fatal("expected single embed response")
 	}
-	embed := (*edit.Embeds)[0]
-	if embed.Title != "Plugin Permissions" {
+
+	embed := buildPluginPanelEmbed([]pluginhost.InstalledPlugin{plugin}, plugin, true, speechLocation{
+		GuildID:   "guild-1",
+		ChannelID: "channel-1",
+	}, true, "已刷新")
+	if embed == nil {
+		t.Fatal("expected embed")
+	}
+	if embed.Title != "Plugin Control Center" {
 		t.Fatalf("unexpected title: %q", embed.Title)
 	}
-	foundCaps := false
+	if !strings.Contains(embed.Description, "已刷新") {
+		t.Fatalf("expected notice in description, got %q", embed.Description)
+	}
+
+	var foundCurrent, foundCaps bool
 	for _, field := range embed.Fields {
-		if field == nil || field.Name != "授权能力" {
+		if field == nil {
 			continue
 		}
-		foundCaps = true
-		if !strings.Contains(field.Value, "discord.read_guild_emojis") || !strings.Contains(field.Value, "worldbook.write") {
-			t.Fatalf("expected capability list in field, got %q", field.Value)
+		if field.Name == "当前选中" {
+			foundCurrent = true
+			if !strings.Contains(field.Value, "official_emoji") || !strings.Contains(field.Value, "当前服务器可用: 是") {
+				t.Fatalf("unexpected selected field: %q", field.Value)
+			}
 		}
+		if field.Name == "授权能力" {
+			foundCaps = true
+			if !strings.Contains(field.Value, "discord.read_guild_emojis") || !strings.Contains(field.Value, "worldbook.write") {
+				t.Fatalf("unexpected capabilities field: %q", field.Value)
+			}
+		}
+	}
+	if !foundCurrent {
+		t.Fatal("expected 当前选中 field")
 	}
 	if !foundCaps {
 		t.Fatal("expected 授权能力 field")
 	}
+}
+
+func TestBuildPluginPanelComponentsDisablesPrivilegedActionsForAdmin(t *testing.T) {
+	plugin := pluginhost.InstalledPlugin{
+		ID:      "official_persona",
+		Name:    "Official Persona Plugin",
+		Version: "v0.1.0",
+		Enabled: true,
+		Manifest: pluginapi.Manifest{
+			Commands: []pluginapi.CommandSpec{{Name: "persona", Description: "persona"}},
+		},
+	}
+
+	components := buildPluginPanelComponents([]pluginhost.InstalledPlugin{plugin}, plugin, true, speechLocation{
+		GuildID: "guild-1",
+	}, true, false)
+	if len(components) != 3 {
+		t.Fatalf("expected 3 component rows, got %d", len(components))
+	}
+
+	row1, ok := components[0].(discordgo.ActionsRow)
+	if !ok {
+		t.Fatalf("expected actions row, got %T", components[0])
+	}
+	row2, ok := components[1].(discordgo.ActionsRow)
+	if !ok {
+		t.Fatalf("expected actions row, got %T", components[1])
+	}
+
+	install := row1.Components[0].(discordgo.Button)
+	refresh := row1.Components[3].(discordgo.Button)
+	if !install.Disabled {
+		t.Fatal("expected install button to be disabled for non-super-admin")
+	}
+	if refresh.Disabled {
+		t.Fatal("expected refresh button to stay enabled")
+	}
+
+	enable := row2.Components[0].(discordgo.Button)
+	allowHere := row2.Components[2].(discordgo.Button)
+	if !enable.Disabled {
+		t.Fatal("expected enable button to be disabled for non-super-admin")
+	}
+	if allowHere.Disabled {
+		t.Fatal("expected allow_here button to stay enabled for admin in guild")
+	}
+}
+
+func TestSlashCommandsExposeSinglePluginPanelCommand(t *testing.T) {
+	commands := slashCommands(nil)
+	for _, command := range commands {
+		if command == nil || command.Name != "plugin" {
+			continue
+		}
+		if len(command.Options) != 0 {
+			t.Fatalf("expected /plugin to have no options, got %d", len(command.Options))
+		}
+		if !strings.Contains(command.Description, "面板") {
+			t.Fatalf("unexpected description: %q", command.Description)
+		}
+		return
+	}
+	t.Fatal("expected plugin command")
 }

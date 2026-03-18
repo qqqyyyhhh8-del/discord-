@@ -27,12 +27,10 @@ This is a Discord bot built with Go + Discordgo. It includes:
 
 ## Official Plugins
 - Official plugin repo: [`qqqyyyhhh8-del/discord-bot-plugins`](https://github.com/qqqyyyhhh8-del/discord-bot-plugins)
-- Install persona management:
-  `/plugin install repo:https://github.com/qqqyyyhhh8-del/discord-bot-plugins.git path:plugins/persona`
-- Install proactive replies:
-  `/plugin install repo:https://github.com/qqqyyyhhh8-del/discord-bot-plugins.git path:plugins/proactive`
-- Install guild emoji management:
-  `/plugin install repo:https://github.com/qqqyyyhhh8-del/discord-bot-plugins.git path:plugins/emoji`
+- Open the `/plugin` panel, click `Install`, then fill in:
+  Persona: `repo=https://github.com/qqqyyyhhh8-del/discord-bot-plugins.git`, `path=plugins/persona`
+  Proactive: `repo=https://github.com/qqqyyyhhh8-del/discord-bot-plugins.git`, `path=plugins/proactive`
+  Emoji: `repo=https://github.com/qqqyyyhhh8-del/discord-bot-plugins.git`, `path=plugins/emoji`
 
 After installation, the host will register `/persona`, `/proactive`, and `/emoji` automatically.
 
@@ -106,15 +104,7 @@ If `BOT_CONFIG_FILE` does not exist, it will be created automatically on startup
 - `/setup channel`: allow the current channel
 - `/setup thread`: allow the current thread
 - `/setup clear`: clear every allowed speaking scope entry
-- `/plugin list`: show installed plugins
-- `/plugin install repo:<repo> ref:<ref> path:<path>`: install a plugin from a Git repository; `path` is optional for monorepo subdirectories
-- `/plugin upgrade plugin:<id> ref:<ref>`: upgrade a plugin
-- `/plugin remove plugin:<id>`: uninstall a plugin
-- `/plugin enable plugin:<id>`: enable a plugin globally
-- `/plugin disable plugin:<id>`: disable a plugin globally
-- `/plugin allow_here plugin:<id>`: allow a plugin in the current guild
-- `/plugin deny_here plugin:<id>`: deny a plugin in the current guild
-- `/plugin permissions plugin:<id>`: show granted capabilities for a plugin
+- `/plugin`: open the all-in-one plugin management panel
 - `/system show`: show the extra system prompt
 - `/system set prompt:<prompt>`: set the extra system prompt
 - `/system clear`: clear the extra system prompt
@@ -138,8 +128,8 @@ If `BOT_CONFIG_FILE` does not exist, it will be created automatically on startup
 - Every plugin must provide a `plugin.json` manifest.
 - The current host supports slash commands, button/modal prefix routing, message hooks, prompt injection, response postprocessing, interval hooks, plugin-private storage, and capability-checked host calls.
 - An official example plugin is available in `examples/plugins/style-note`.
-- Example install command for the sample plugin in this repository:
-  `/plugin install repo:https://github.com/qqqyyyhhh8-del/discord-.git path:examples/plugins/style-note`
+- To install the sample plugin from this repository, open the `/plugin` panel and fill:
+  `repo=https://github.com/qqqyyyhhh8-del/discord-.git`, `path=examples/plugins/style-note`
 
 ## License
 

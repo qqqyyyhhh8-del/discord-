@@ -92,24 +92,11 @@ func NewSession(token, commandGuildID string, handler *Handler) (*Session, error
 				return
 			}
 			if commandData.Name == "plugin" {
-				_ = s.InteractionRespond(i.Interaction, deferredChannelMessageResponse(true))
-				go func(interaction *discordgo.Interaction, userID string, location speechLocation, options []*discordgo.ApplicationCommandInteractionDataOption) {
-					ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-					defer cancel()
-
-					edit, err := handler.handlePluginCommand(ctx, userID, location, options)
-					if err != nil {
-						edit = pluginErrorEdit("插件命令执行失败", err.Error())
-					}
-					if edit == nil {
-						edit = pluginEmbedsEdit(&discordgo.MessageEmbed{
-							Title:       "Plugin Manager",
-							Description: "已完成。",
-							Color:       pluginEmbedColorInfo,
-						})
-					}
-					_ = editInteractionResponse(s, interaction, edit)
-				}(i.Interaction, interactionUserID(i), speechLocationForInteraction(s, i), commandData.Options)
+				response, err := handler.PluginPanelCommandResponse(interactionUserID(i), speechLocationForInteraction(s, i))
+				if err != nil {
+					response = pluginErrorInteractionResponse("插件面板打开失败", err.Error())
+				}
+				_ = s.InteractionRespond(i.Interaction, response)
 				return
 			}
 			if handler != nil && handler.pluginManager != nil && handler.pluginManager.CanHandleSlashCommand(commandData.Name) {
@@ -138,6 +125,14 @@ func NewSession(token, commandGuildID string, handler *Handler) (*Session, error
 			_ = respondToInteraction(s, i.Interaction, response, ephemeral)
 		case discordgo.InteractionMessageComponent:
 			componentData := i.MessageComponentData()
+			if isPluginInteractionCustomID(componentData.CustomID) {
+				response, err := handler.PluginComponentResponse(interactionUserID(i), speechLocationForInteraction(s, i), componentData)
+				if err != nil {
+					response = pluginErrorInteractionResponse("插件面板处理失败", err.Error())
+				}
+				_ = s.InteractionRespond(i.Interaction, response)
+				return
+			}
 			if handler != nil && handler.pluginManager != nil && handler.pluginManager.CanHandleComponent(componentData.CustomID) {
 				ctx, cancel := context.WithTimeout(context.Background(), DefaultTimeout())
 				defer cancel()
@@ -151,6 +146,27 @@ func NewSession(token, commandGuildID string, handler *Handler) (*Session, error
 			}
 		case discordgo.InteractionModalSubmit:
 			modalData := i.ModalSubmitData()
+			if isPluginInteractionCustomID(modalData.CustomID) {
+				_ = s.InteractionRespond(i.Interaction, deferredChannelMessageResponse(true))
+				go func(interaction *discordgo.Interaction, userID string, location speechLocation, data discordgo.ModalSubmitInteractionData) {
+					ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+					defer cancel()
+
+					edit, err := handler.PluginModalEdit(ctx, userID, location, data)
+					if err != nil {
+						edit = pluginErrorEdit("插件面板处理失败", err.Error())
+					}
+					if edit == nil {
+						edit = pluginEmbedsEdit(&discordgo.MessageEmbed{
+							Title:       "Plugin Control Center",
+							Description: "已完成。",
+							Color:       pluginEmbedColorInfo,
+						})
+					}
+					_ = editInteractionResponse(s, interaction, edit)
+				}(i.Interaction, interactionUserID(i), speechLocationForInteraction(s, i), modalData)
+				return
+			}
 			if handler != nil && handler.pluginManager != nil && handler.pluginManager.CanHandleModal(modalData.CustomID) {
 				ctx, cancel := context.WithTimeout(context.Background(), DefaultTimeout())
 				defer cancel()

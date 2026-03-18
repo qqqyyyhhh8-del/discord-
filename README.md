@@ -27,12 +27,10 @@
 
 ## 官方插件
 - 官方插件仓库：[`qqqyyyhhh8-del/discord-bot-plugins`](https://github.com/qqqyyyhhh8-del/discord-bot-plugins)
-- 安装人设管理：
-  `/plugin install repo:https://github.com/qqqyyyhhh8-del/discord-bot-plugins.git path:plugins/persona`
-- 安装主动回复：
-  `/plugin install repo:https://github.com/qqqyyyhhh8-del/discord-bot-plugins.git path:plugins/proactive`
-- 安装服务器表情管理：
-  `/plugin install repo:https://github.com/qqqyyyhhh8-del/discord-bot-plugins.git path:plugins/emoji`
+- 在 `/plugin` 面板点击 `安装`，然后填写：
+  人设管理：`repo=https://github.com/qqqyyyhhh8-del/discord-bot-plugins.git`，`path=plugins/persona`
+  主动回复：`repo=https://github.com/qqqyyyhhh8-del/discord-bot-plugins.git`，`path=plugins/proactive`
+  服务器表情管理：`repo=https://github.com/qqqyyyhhh8-del/discord-bot-plugins.git`，`path=plugins/emoji`
 
 安装后会自动注册对应的 `/persona`、`/proactive`、`/emoji` 命令。
 
@@ -106,15 +104,7 @@
 - `/setup channel`：放行当前所在频道
 - `/setup thread`：放行当前所在子区
 - `/setup clear`：清空所有允许发言范围
-- `/plugin list`：查看已安装插件
-- `/plugin install repo:<repo> ref:<ref> path:<path>`：从 Git 仓库安装插件；`path` 可选，用于 monorepo 子目录插件
-- `/plugin upgrade plugin:<id> ref:<ref>`：升级插件
-- `/plugin remove plugin:<id>`：卸载插件
-- `/plugin enable plugin:<id>`：全局启用插件
-- `/plugin disable plugin:<id>`：全局禁用插件
-- `/plugin allow_here plugin:<id>`：允许插件在当前服务器使用
-- `/plugin deny_here plugin:<id>`：禁止插件在当前服务器使用
-- `/plugin permissions plugin:<id>`：查看插件授权能力
+- `/plugin`：打开一站式插件管理面板
 - `/system show`：查看额外 system prompt
 - `/system set prompt:<prompt>`：设置额外 system prompt
 - `/system clear`：清空额外 system prompt
@@ -139,7 +129,7 @@
 - 宿主当前支持：slash 命令、按钮/Modal 前缀路由、消息事件、prompt 注入、回复后处理、定时任务、插件私有存储、受控宿主能力调用。
 - 官方样例插件在 `examples/plugins/style-note`。
 - 安装当前仓库内的样例插件：
-  `/plugin install repo:https://github.com/qqqyyyhhh8-del/discord-.git path:examples/plugins/style-note`
+  在 `/plugin` 面板点击 `安装`，填写 `repo=https://github.com/qqqyyyhhh8-del/discord-.git`，`path=examples/plugins/style-note`
 
 ## 许可证
 
