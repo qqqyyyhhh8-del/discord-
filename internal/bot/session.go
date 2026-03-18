@@ -97,17 +97,18 @@ func NewSession(token, commandGuildID string, handler *Handler) (*Session, error
 					ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 					defer cancel()
 
-					response, _, err := handler.handlePluginCommand(ctx, userID, location, options)
+					edit, err := handler.handlePluginCommand(ctx, userID, location, options)
 					if err != nil {
-						response = "抱歉，我现在无法处理这个插件命令。"
+						edit = pluginErrorEdit("插件命令执行失败", err.Error())
 					}
-					content := strings.TrimSpace(response)
-					if content == "" {
-						content = "已完成。"
+					if edit == nil {
+						edit = pluginEmbedsEdit(&discordgo.MessageEmbed{
+							Title:       "Plugin Manager",
+							Description: "已完成。",
+							Color:       pluginEmbedColorInfo,
+						})
 					}
-					_, _ = s.InteractionResponseEdit(interaction, &discordgo.WebhookEdit{
-						Content: &content,
-					})
+					_ = editInteractionResponse(s, interaction, edit)
 				}(i.Interaction, interactionUserID(i), speechLocationForInteraction(s, i), commandData.Options)
 				return
 			}
