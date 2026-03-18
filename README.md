@@ -22,7 +22,7 @@
 - **自动总结**：当对话条数超过阈值时生成摘要并保留关键信息。
 - **RAG 检索**：对历史用户消息生成 embedding，召回后可选再走 rerank 重排。
 - **官方插件**：`/persona`、`/emoji`、`/proactive` 已迁移到官方插件仓库 `discord-bot-plugins`，按需安装后即可注册对应 Slash 命令。
-- **允许发言范围**：机器人默认不会在任何服务器、频道、子区发言；管理员需要在目标位置直接执行 `/setup server`、`/setup channel`、`/setup thread` 来放行当前服务器、当前频道或当前子区。
+- **允许发言范围**：机器人默认不会在任何服务器、频道、子区发言；管理员需要在目标位置直接执行 `/setup` 打开管理面板，并按当前上下文放行服务器、频道或子区。
 - **插件生态**：支持从 Git 仓库安装外部进程插件；插件通过 JSON-RPC over stdio 接入，可注册自己的 slash 命令、处理消息、追加 prompt、改写回复，并使用受控能力访问宿主。
 
 ## 官方插件
@@ -99,11 +99,7 @@
 
 ## Slash 命令
 - `/help`：查看命令帮助
-- `/setup show`：查看当前允许发言范围
-- `/setup server`：放行当前所在服务器
-- `/setup channel`：放行当前所在频道
-- `/setup thread`：放行当前所在子区
-- `/setup clear`：清空所有允许发言范围
+- `/setup`：打开允许发言范围管理面板
 - `/plugin`：打开一站式插件管理面板
 - `/system show`：查看额外 system prompt
 - `/system set prompt:<prompt>`：设置额外 system prompt
@@ -116,7 +112,7 @@
 - 机器人需要在 Discord 开发者后台开启 **Message Content Intent**。
 - 群聊里请使用 `@机器人 你的问题`，或直接回复机器人上一条消息来触发回复。
 - 机器人在收到触发消息后，会在生成回复的过程中持续显示 `typing`。
-- 首次启动后机器人默认不会在任何群聊位置发言；请先使用 `/setup` 配置允许范围。
+- 首次启动后机器人默认不会在任何群聊位置发言；请先在目标位置使用 `/setup` 面板配置允许范围。
 - 管理配置改为 slash commands，不再使用 `!persona`、`!system`、`!admin` 这类消息前缀命令。
 - `/persona`、`/emoji`、`/proactive` 现在由官方插件提供；未安装对应插件时，这些命令不会出现在机器人里。
 - 如果官方 `/emoji` 插件分析时遇到超时，优先检查你的 OpenAI 兼容站点响应速度；必要时可在 `.env` 里设置 `OPENAI_HTTP_TIMEOUT_SECONDS=600`。

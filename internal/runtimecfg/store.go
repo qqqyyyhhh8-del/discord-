@@ -497,6 +497,19 @@ func (s *Store) AddAllowedGuildID(id string) error {
 	return s.persistLocked()
 }
 
+func (s *Store) RemoveAllowedGuildID(id string) error {
+	id = normalizeID(id)
+	if id == "" {
+		return errors.New("服务器 ID 不能为空")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.data.AllowedGuildIDs = normalizeIDs(removeString(s.data.AllowedGuildIDs, id))
+	return s.persistLocked()
+}
+
 func (s *Store) SetAllowedChannelIDs(ids []string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -519,6 +532,19 @@ func (s *Store) AddAllowedChannelID(id string) error {
 	return s.persistLocked()
 }
 
+func (s *Store) RemoveAllowedChannelID(id string) error {
+	id = normalizeID(id)
+	if id == "" {
+		return errors.New("频道 ID 不能为空")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.data.AllowedChannelIDs = normalizeIDs(removeString(s.data.AllowedChannelIDs, id))
+	return s.persistLocked()
+}
+
 func (s *Store) SetAllowedThreadIDs(ids []string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -538,6 +564,19 @@ func (s *Store) AddAllowedThreadID(id string) error {
 
 	s.data.SpeechMode = SpeechModeAllowlist
 	s.data.AllowedThreadIDs = normalizeIDs(append(s.data.AllowedThreadIDs, id))
+	return s.persistLocked()
+}
+
+func (s *Store) RemoveAllowedThreadID(id string) error {
+	id = normalizeID(id)
+	if id == "" {
+		return errors.New("子区 ID 不能为空")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.data.AllowedThreadIDs = normalizeIDs(removeString(s.data.AllowedThreadIDs, id))
 	return s.persistLocked()
 }
 

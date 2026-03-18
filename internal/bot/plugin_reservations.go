@@ -12,6 +12,7 @@ func CoreSlashCommandNames() []string {
 
 func CoreComponentPrefixes() []string {
 	return []string{
+		setupComponentPrefix,
 		pluginComponentPrefix,
 	}
 }

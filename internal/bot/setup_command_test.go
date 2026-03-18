@@ -15,12 +15,10 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
-func TestHandleSetupCommandAddsCurrentServerAndPersistsAllowlist(t *testing.T) {
-	runtimeStore, configPath := newTestStoreForBot(t, `{
+func TestSetupPanelCommandResponseIncludesEmbedAndButtons(t *testing.T) {
+	runtimeStore := newTestRuntimeStore(t, `{
   "super_admin_ids": ["owner-1"],
   "admin_ids": ["admin-1"],
-  "personas": {},
-  "active_persona": "",
   "system_prompt": "",
   "allowed_guild_ids": [],
   "allowed_channel_ids": [],
@@ -28,23 +26,70 @@ func TestHandleSetupCommandAddsCurrentServerAndPersistsAllowlist(t *testing.T) {
 }`)
 
 	handler := newSetupTestHandler(runtimeStore)
-
-	response, err := handler.handleSetupCommand("admin-1", speechLocation{
-		GuildID: "100",
-	}, []*discordgo.ApplicationCommandInteractionDataOption{
-		{
-			Name: "server",
-			Type: discordgo.ApplicationCommandOptionSubCommand,
-		},
+	response, err := handler.SetupPanelCommandResponse("admin-1", speechLocation{
+		GuildID:   "guild-1",
+		ChannelID: "channel-1",
 	})
 	if err != nil {
-		t.Fatalf("handle setup server: %v", err)
+		t.Fatalf("setup panel response: %v", err)
 	}
-	if !strings.Contains(response, "已放行当前服务器: `100`") {
-		t.Fatalf("unexpected setup response: %q", response)
+	if response.Type != discordgo.InteractionResponseChannelMessageWithSource {
+		t.Fatalf("unexpected response type: %v", response.Type)
+	}
+	if response.Data == nil || response.Data.Flags != discordgo.MessageFlagsEphemeral {
+		t.Fatalf("expected ephemeral response, got %#v", response.Data)
+	}
+	if len(response.Data.Embeds) != 1 || response.Data.Embeds[0].Title != "Speech Scope Setup" {
+		t.Fatalf("unexpected embeds: %#v", response.Data.Embeds)
+	}
+	if len(response.Data.Components) != 1 {
+		t.Fatalf("expected one button row, got %#v", response.Data.Components)
+	}
+	row, ok := response.Data.Components[0].(discordgo.ActionsRow)
+	if !ok {
+		t.Fatalf("expected actions row, got %T", response.Data.Components[0])
+	}
+	if len(row.Components) != 4 {
+		t.Fatalf("expected 4 buttons, got %d", len(row.Components))
+	}
+	serverButton := row.Components[0].(discordgo.Button)
+	channelButton := row.Components[1].(discordgo.Button)
+	if serverButton.Label != "放行当前服务器" {
+		t.Fatalf("unexpected server button label: %q", serverButton.Label)
+	}
+	if channelButton.Label != "放行当前频道" {
+		t.Fatalf("unexpected channel button label: %q", channelButton.Label)
+	}
+}
+
+func TestSetupComponentResponseTogglesServerAllowAndPersists(t *testing.T) {
+	runtimeStore, configPath := newTestStoreForBot(t, `{
+  "super_admin_ids": ["owner-1"],
+  "admin_ids": ["admin-1"],
+  "system_prompt": "",
+  "allowed_guild_ids": [],
+  "allowed_channel_ids": [],
+  "allowed_thread_ids": []
+}`)
+
+	handler := newSetupTestHandler(runtimeStore)
+	response, err := handler.SetupComponentResponse("admin-1", speechLocation{
+		GuildID:   "100",
+		ChannelID: "200",
+	}, discordgo.MessageComponentInteractionData{
+		CustomID: setupActionToggleServer,
+	})
+	if err != nil {
+		t.Fatalf("toggle server allow: %v", err)
+	}
+	if response.Type != discordgo.InteractionResponseUpdateMessage {
+		t.Fatalf("unexpected response type: %v", response.Type)
+	}
+	if response.Data == nil || !strings.Contains(response.Data.Content, "已放行当前服务器: `100`") {
+		t.Fatalf("unexpected response data: %#v", response.Data)
 	}
 	if !runtimeStore.AllowsSpeech("100", "", "") {
-		t.Fatal("expected configured guild id to permit speech")
+		t.Fatal("expected guild to be allowed after toggle")
 	}
 
 	reopened, err := openRuntimeStore(configPath)
@@ -52,143 +97,117 @@ func TestHandleSetupCommandAddsCurrentServerAndPersistsAllowlist(t *testing.T) {
 		t.Fatalf("reopen runtime store: %v", err)
 	}
 	if !reopened.AllowsSpeech("100", "", "") {
-		t.Fatal("expected configured guild id to persist")
+		t.Fatal("expected guild allowlist entry to persist")
 	}
 }
 
-func TestHandleSetupCommandAddsCurrentChannelAndThread(t *testing.T) {
+func TestSetupPanelDisablesLocalToggleWhenServerAlreadyAllowed(t *testing.T) {
 	runtimeStore := newTestRuntimeStore(t, `{
   "super_admin_ids": ["owner-1"],
   "admin_ids": ["admin-1"],
-  "personas": {},
-  "active_persona": "",
+  "system_prompt": "",
+  "allowed_guild_ids": ["guild-1"],
+  "allowed_channel_ids": ["channel-2"],
+  "allowed_thread_ids": []
+}`)
+
+	handler := newSetupTestHandler(runtimeStore)
+	data, err := handler.setupPanelResponseData(speechLocation{
+		GuildID:   "guild-1",
+		ChannelID: "channel-2",
+	}, "")
+	if err != nil {
+		t.Fatalf("build setup panel: %v", err)
+	}
+	row := data.Components[0].(discordgo.ActionsRow)
+	serverButton := row.Components[0].(discordgo.Button)
+	channelButton := row.Components[1].(discordgo.Button)
+	if serverButton.Style != discordgo.DangerButton {
+		t.Fatalf("expected server button to become danger, got %v", serverButton.Style)
+	}
+	if !channelButton.Disabled {
+		t.Fatal("expected channel button to be disabled when guild is already allowed")
+	}
+	if channelButton.Label != "服务器已放行" {
+		t.Fatalf("unexpected disabled button label: %q", channelButton.Label)
+	}
+}
+
+func TestSetupPanelShowsDangerButtonForAllowedThread(t *testing.T) {
+	runtimeStore := newTestRuntimeStore(t, `{
+  "super_admin_ids": ["owner-1"],
+  "admin_ids": ["admin-1"],
+  "system_prompt": "",
+  "allowed_guild_ids": [],
+  "allowed_channel_ids": [],
+  "allowed_thread_ids": ["thread-3"]
+}`)
+
+	handler := newSetupTestHandler(runtimeStore)
+	data, err := handler.setupPanelResponseData(speechLocation{
+		GuildID:   "guild-1",
+		ChannelID: "channel-2",
+		ThreadID:  "thread-3",
+	}, "")
+	if err != nil {
+		t.Fatalf("build thread setup panel: %v", err)
+	}
+	row := data.Components[0].(discordgo.ActionsRow)
+	threadButton := row.Components[1].(discordgo.Button)
+	if threadButton.Style != discordgo.DangerButton {
+		t.Fatalf("expected thread button to become danger, got %v", threadButton.Style)
+	}
+	if threadButton.Label != "取消放行当前子区" {
+		t.Fatalf("unexpected thread button label: %q", threadButton.Label)
+	}
+}
+
+func TestSetupComponentResponseTogglesThreadAllow(t *testing.T) {
+	runtimeStore := newTestRuntimeStore(t, `{
+  "super_admin_ids": ["owner-1"],
+  "admin_ids": ["admin-1"],
   "system_prompt": "",
   "allowed_guild_ids": [],
   "allowed_channel_ids": [],
   "allowed_thread_ids": []
 }`)
 
-	handler := newPanelTestHandler(runtimeStore)
-
-	channelResponse, err := handler.handleSetupCommand("admin-1", speechLocation{
+	handler := newSetupTestHandler(runtimeStore)
+	response, err := handler.SetupComponentResponse("admin-1", speechLocation{
 		GuildID:   "guild-1",
 		ChannelID: "channel-2",
 		ThreadID:  "thread-3",
-	}, []*discordgo.ApplicationCommandInteractionDataOption{
-		{
-			Name: "channel",
-			Type: discordgo.ApplicationCommandOptionSubCommand,
-		},
+	}, discordgo.MessageComponentInteractionData{
+		CustomID: setupActionToggleThread,
 	})
 	if err != nil {
-		t.Fatalf("handle setup channel: %v", err)
+		t.Fatalf("toggle thread allow: %v", err)
 	}
-	if !strings.Contains(channelResponse, "已放行当前频道: `channel-2`") {
-		t.Fatalf("unexpected setup channel response: %q", channelResponse)
-	}
-	if !runtimeStore.AllowsSpeech("", "channel-2", "") {
-		t.Fatal("expected configured channel id to permit speech")
-	}
-
-	threadResponse, err := handler.handleSetupCommand("admin-1", speechLocation{
-		GuildID:   "guild-1",
-		ChannelID: "channel-2",
-		ThreadID:  "thread-3",
-	}, []*discordgo.ApplicationCommandInteractionDataOption{
-		{
-			Name: "thread",
-			Type: discordgo.ApplicationCommandOptionSubCommand,
-		},
-	})
-	if err != nil {
-		t.Fatalf("handle setup thread: %v", err)
-	}
-	if !strings.Contains(threadResponse, "已放行当前子区: `thread-3`") {
-		t.Fatalf("unexpected setup thread response: %q", threadResponse)
+	if response.Type != discordgo.InteractionResponseUpdateMessage {
+		t.Fatalf("unexpected response type: %v", response.Type)
 	}
 	if !runtimeStore.AllowsSpeech("", "", "thread-3") {
-		t.Fatal("expected configured thread id to permit speech")
+		t.Fatal("expected thread to be allowed after toggle")
 	}
 }
 
-func TestHandleSetupCommandThreadRejectsNonThreadLocation(t *testing.T) {
-	runtimeStore := newTestRuntimeStore(t, `{
-  "super_admin_ids": ["owner-1"],
-  "admin_ids": ["admin-1"],
-  "personas": {},
-  "active_persona": "",
-  "system_prompt": ""
-}`)
-
-	handler := newPanelTestHandler(runtimeStore)
-	response, err := handler.handleSetupCommand("admin-1", speechLocation{
-		GuildID:   "guild-1",
-		ChannelID: "channel-1",
-	}, []*discordgo.ApplicationCommandInteractionDataOption{
-		{
-			Name: "thread",
-			Type: discordgo.ApplicationCommandOptionSubCommand,
-		},
-	})
-	if err != nil {
-		t.Fatalf("handle setup non-thread: %v", err)
-	}
-	if !strings.Contains(response, "当前不在子区/线程/帖子内") {
-		t.Fatalf("unexpected non-thread response: %q", response)
-	}
-}
-
-func TestHandleSetupCommandShowSummarizesCurrentAllowlist(t *testing.T) {
-	runtimeStore := newTestRuntimeStore(t, `{
-  "super_admin_ids": ["owner-1"],
-  "admin_ids": ["admin-1"],
-  "personas": {},
-  "active_persona": "",
-  "system_prompt": "",
-  "allowed_guild_ids": ["100"],
-  "allowed_channel_ids": ["200"],
-  "allowed_thread_ids": ["300"]
-}`)
-
-	handler := newPanelTestHandler(runtimeStore)
-	response, err := handler.handleSetupCommand("admin-1", speechLocation{}, []*discordgo.ApplicationCommandInteractionDataOption{
-		{
-			Name: "show",
-			Type: discordgo.ApplicationCommandOptionSubCommand,
-		},
-	})
-	if err != nil {
-		t.Fatalf("handle setup show: %v", err)
-	}
-	if !strings.Contains(response, "当前状态：仅在以下白名单位置发言") {
-		t.Fatalf("unexpected setup summary: %q", response)
-	}
-	if !strings.Contains(response, "100") || !strings.Contains(response, "200") || !strings.Contains(response, "300") {
-		t.Fatalf("expected setup summary to contain ids, got %q", response)
-	}
-}
-
-func TestHandleSetupCommandRejectsNonAdmin(t *testing.T) {
+func TestSetupPanelRejectsNonAdmin(t *testing.T) {
 	runtimeStore := newTestRuntimeStore(t, `{
   "super_admin_ids": ["owner-1"],
   "admin_ids": [],
-  "personas": {},
-  "active_persona": "",
   "system_prompt": ""
 }`)
 
-	handler := newPanelTestHandler(runtimeStore)
-	response, err := handler.handleSetupCommand("user-1", speechLocation{}, []*discordgo.ApplicationCommandInteractionDataOption{
-		{
-			Name: "show",
-			Type: discordgo.ApplicationCommandOptionSubCommand,
-		},
+	handler := newSetupTestHandler(runtimeStore)
+	response, err := handler.SetupPanelCommandResponse("user-1", speechLocation{
+		GuildID:   "guild-1",
+		ChannelID: "channel-1",
 	})
 	if err != nil {
-		t.Fatalf("handle setup non-admin: %v", err)
+		t.Fatalf("setup panel non-admin: %v", err)
 	}
-	if response != permissionDenied() {
-		t.Fatalf("unexpected non-admin response: %q", response)
+	if response.Data == nil || response.Data.Content != permissionDenied() {
+		t.Fatalf("unexpected non-admin response: %#v", response.Data)
 	}
 }
 

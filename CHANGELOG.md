@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 - Updated the `/plugin` panel so admins can open the install modal directly, while upgrade/enable/disable/remove remain super-admin operations.
 - Cleaned `.env.example` and both README files to remove the retired plugin market configuration.
 - Added dedicated Chinese and English plugin authoring guides, and linked them from the README navigation.
+- Reworked `/setup` into an embed panel with context-aware toggle buttons for the current server, channel, or thread.
 
 ## v0.6.0 - 2026-03-18
 

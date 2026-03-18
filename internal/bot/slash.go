@@ -82,34 +82,7 @@ func slashCommands(pluginCommands []*discordgo.ApplicationCommand) []*discordgo.
 		},
 		{
 			Name:        "setup",
-			Description: "设置允许机器人发言的服务器/频道/子区",
-			Options: []*discordgo.ApplicationCommandOption{
-				{
-					Type:        discordgo.ApplicationCommandOptionSubCommand,
-					Name:        "show",
-					Description: "查看当前允许发言范围",
-				},
-				{
-					Type:        discordgo.ApplicationCommandOptionSubCommand,
-					Name:        "server",
-					Description: "放行当前所在服务器",
-				},
-				{
-					Type:        discordgo.ApplicationCommandOptionSubCommand,
-					Name:        "channel",
-					Description: "放行当前所在频道",
-				},
-				{
-					Type:        discordgo.ApplicationCommandOptionSubCommand,
-					Name:        "thread",
-					Description: "放行当前所在子区",
-				},
-				{
-					Type:        discordgo.ApplicationCommandOptionSubCommand,
-					Name:        "clear",
-					Description: "清空所有允许发言范围",
-				},
-			},
+			Description: "打开允许发言范围管理面板",
 		},
 		{
 			Name:        "plugin",
@@ -151,7 +124,7 @@ func (h *Handler) HandleSlashCommand(ctx context.Context, authorID string, data 
 		response, err := h.handleAdminCommand(command, authorID)
 		return response, true, err
 	case "setup":
-		return "请直接在目标服务器、频道或子区中使用 `/setup`。", true, nil
+		return "请直接在目标服务器频道或子区中使用 `/setup` 打开允许发言范围管理面板。", true, nil
 	default:
 		return "未知命令。", true, nil
 	}

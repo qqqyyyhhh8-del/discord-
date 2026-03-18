@@ -22,7 +22,7 @@ This is a Discord bot built with Go + Discordgo. It includes:
 - **Auto summary**: Generates summaries after the message count crosses a threshold.
 - **RAG retrieval**: Embeds historical user messages, retrieves relevant items, and optionally reranks them.
 - **Official plugins**: `/persona`, `/emoji`, and `/proactive` now live in the official `discord-bot-plugins` repository and are installed on demand.
-- **Allowed speaking scope**: By default the bot is not allowed to speak in any guild, channel, or thread. Admins must run `/setup server`, `/setup channel`, or `/setup thread` directly in the target location to allow the current guild, current channel, or current thread.
+- **Allowed speaking scope**: By default the bot is not allowed to speak in any guild, channel, or thread. Admins must run `/setup` in the target location and use the panel buttons to allow the current guild, channel, or thread.
 - **Plugin ecosystem**: External process plugins can be installed from Git repositories. Plugins connect over JSON-RPC over stdio and can register slash commands, receive message events, inject prompt blocks, and postprocess model replies with capability checks.
 
 ## Official Plugins
@@ -99,11 +99,7 @@ If `BOT_CONFIG_FILE` does not exist, it will be created automatically on startup
 
 ## Slash Commands
 - `/help`: show command help
-- `/setup show`: show the current allowed speaking scope
-- `/setup server`: allow the current guild
-- `/setup channel`: allow the current channel
-- `/setup thread`: allow the current thread
-- `/setup clear`: clear every allowed speaking scope entry
+- `/setup`: open the speaking-scope management panel
 - `/plugin`: open the all-in-one plugin management panel
 - `/system show`: show the extra system prompt
 - `/system set prompt:<prompt>`: set the extra system prompt
@@ -116,7 +112,7 @@ If `BOT_CONFIG_FILE` does not exist, it will be created automatically on startup
 - Enable **Message Content Intent** in the Discord developer portal.
 - In guilds, use `@bot your message` or reply directly to the bot to trigger a response.
 - The bot shows `typing` while it is processing a reply.
-- On first start, the bot will not speak in any guild location until `/setup` is configured.
+- On first start, the bot will not speak in any guild location until `/setup` is configured from the target location.
 - Management has been moved to slash commands; old message-prefix commands such as `!persona`, `!system`, and `!admin` are not used anymore.
 - `/persona`, `/emoji`, and `/proactive` are now provided by official plugins. If a plugin is not installed, its slash command will not exist.
 - If the official `/emoji` plugin times out during analysis, check the response speed of your OpenAI-compatible endpoint. If needed, set `OPENAI_HTTP_TIMEOUT_SECONDS=600` in `.env`.

@@ -84,11 +84,11 @@ func NewSession(token, commandGuildID string, handler *Handler) (*Session, error
 		case discordgo.InteractionApplicationCommand:
 			commandData := i.ApplicationCommandData()
 			if commandData.Name == "setup" {
-				response, err := handler.handleSetupCommand(interactionUserID(i), speechLocationForInteraction(s, i), commandData.Options)
+				response, err := handler.SetupPanelCommandResponse(interactionUserID(i), speechLocationForInteraction(s, i))
 				if err != nil {
-					response = "抱歉，我现在无法保存这个允许发言范围设置。"
+					response = simpleEphemeralInteractionResponse("抱歉，我现在无法打开允许发言范围面板。")
 				}
-				_ = respondToInteraction(s, i.Interaction, response, true)
+				_ = s.InteractionRespond(i.Interaction, response)
 				return
 			}
 			if commandData.Name == "plugin" {
@@ -125,6 +125,14 @@ func NewSession(token, commandGuildID string, handler *Handler) (*Session, error
 			_ = respondToInteraction(s, i.Interaction, response, ephemeral)
 		case discordgo.InteractionMessageComponent:
 			componentData := i.MessageComponentData()
+			if isSetupInteractionCustomID(componentData.CustomID) {
+				response, err := handler.SetupComponentResponse(interactionUserID(i), speechLocationForInteraction(s, i), componentData)
+				if err != nil {
+					response = simpleEphemeralInteractionResponse("允许发言范围面板处理失败。")
+				}
+				_ = s.InteractionRespond(i.Interaction, response)
+				return
+			}
 			if isPluginInteractionCustomID(componentData.CustomID) {
 				response, err := handler.PluginComponentResponse(interactionUserID(i), speechLocationForInteraction(s, i), componentData)
 				if err != nil {

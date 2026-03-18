@@ -600,13 +600,7 @@ func personaHelp() string {
 }
 
 func setupHelp() string {
-	return strings.Join([]string{
-		"/setup show",
-		"/setup server",
-		"/setup channel",
-		"/setup thread",
-		"/setup clear",
-	}, "\n")
+	return "/setup 打开允许发言范围管理面板"
 }
 
 func systemHelp() string {
