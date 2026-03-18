@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## v0.6.0 - 2026-03-18
+
+### Added
+
+- Added `PLUGIN_MARKET_INDEX_URL` so the host can read a static plugin market index from GitHub Pages or any other JSON endpoint.
+- Added plugin market preview and external link buttons to the `/plugin` management panel.
+- Added tests covering market link rendering in the plugin panel.
+
+### Changed
+
+- Bumped the host version to `v0.6.0`.
+- Updated the README files and `.env.example` to document the official plugin market and its index URL.
+
+### Fixed
+
+- Fixed plugin market caching so an empty but valid market index is still cached instead of being re-fetched on every panel refresh.
+
 ## v0.5.0 - 2026-03-18
 
 ### Added

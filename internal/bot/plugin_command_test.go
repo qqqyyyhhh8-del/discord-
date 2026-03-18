@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"discordbot/internal/pluginhost"
+	"discordbot/internal/pluginmarket"
 	"discordbot/pkg/pluginapi"
 
 	"github.com/bwmarrin/discordgo"
@@ -31,7 +32,7 @@ func TestBuildPluginPanelEmbedIncludesSelectedPluginDetails(t *testing.T) {
 	embed := buildPluginPanelEmbed([]pluginhost.InstalledPlugin{plugin}, plugin, true, speechLocation{
 		GuildID:   "guild-1",
 		ChannelID: "channel-1",
-	}, true, "已刷新")
+	}, true, "已刷新", pluginmarket.Index{}, "")
 	if embed == nil {
 		t.Fatal("expected embed")
 	}
@@ -81,7 +82,7 @@ func TestBuildPluginPanelComponentsDisablesPrivilegedActionsForAdmin(t *testing.
 
 	components := buildPluginPanelComponents([]pluginhost.InstalledPlugin{plugin}, plugin, true, speechLocation{
 		GuildID: "guild-1",
-	}, true, false)
+	}, true, false, pluginmarket.Index{})
 	if len(components) != 3 {
 		t.Fatalf("expected 3 component rows, got %d", len(components))
 	}
@@ -111,6 +112,39 @@ func TestBuildPluginPanelComponentsDisablesPrivilegedActionsForAdmin(t *testing.
 	}
 	if allowHere.Disabled {
 		t.Fatal("expected allow_here button to stay enabled for admin in guild")
+	}
+}
+
+func TestBuildPluginPanelComponentsIncludesMarketLinks(t *testing.T) {
+	plugin := pluginhost.InstalledPlugin{
+		ID:   "official_persona",
+		Name: "Official Persona Plugin",
+	}
+
+	components := buildPluginPanelComponents([]pluginhost.InstalledPlugin{plugin}, plugin, true, speechLocation{
+		GuildID: "guild-1",
+	}, true, true, pluginmarket.Index{
+		SiteURL:   "https://example.com/market/",
+		SubmitURL: "https://example.com/market/submit",
+	})
+	if len(components) != 4 {
+		t.Fatalf("expected 4 component rows, got %d", len(components))
+	}
+
+	row, ok := components[3].(discordgo.ActionsRow)
+	if !ok {
+		t.Fatalf("expected actions row, got %T", components[3])
+	}
+	if len(row.Components) != 2 {
+		t.Fatalf("expected 2 market buttons, got %d", len(row.Components))
+	}
+	site := row.Components[0].(discordgo.Button)
+	submit := row.Components[1].(discordgo.Button)
+	if site.Style != discordgo.LinkButton || site.URL != "https://example.com/market/" {
+		t.Fatalf("unexpected site button: %#v", site)
+	}
+	if submit.Style != discordgo.LinkButton || submit.URL != "https://example.com/market/submit" {
+		t.Fatalf("unexpected submit button: %#v", submit)
 	}
 }
 

@@ -2,7 +2,7 @@
 
 [简体中文](README.md) | [English](README.en.md)
 
-当前版本：`v0.5.0`  
+当前版本：`v0.6.0`  
 更新记录见 [CHANGELOG.md](CHANGELOG.md)
 
 这是一个基于 Go + Discordgo 的聊天机器人示例，具备：
@@ -12,6 +12,7 @@
 - 插件化的人设 / 服务器表情 / 主动回复扩展能力
 - 允许发言范围、管理员、system prompt 的核心 Slash 管理能力
 - 外部插件宿主与 Git 安装式插件生态
+- 静态插件市场索引，可与 bot 的 `/plugin` 面板联动
 - 世界书注入与服务器表情世界书持久化
 
 ## 功能概览
@@ -27,12 +28,15 @@
 
 ## 官方插件
 - 官方插件仓库：[`qqqyyyhhh8-del/discord-bot-plugins`](https://github.com/qqqyyyhhh8-del/discord-bot-plugins)
+- 官方插件市场：[`qqqyyyhhh8-del/discord-bot-market`](https://github.com/qqqyyyhhh8-del/discord-bot-market)
+- 市场主页：<https://qqqyyyhhh8-del.github.io/discord-bot-market/>
 - 在 `/plugin` 面板点击 `安装`，然后填写：
   人设管理：`repo=https://github.com/qqqyyyhhh8-del/discord-bot-plugins.git`，`path=plugins/persona`
   主动回复：`repo=https://github.com/qqqyyyhhh8-del/discord-bot-plugins.git`，`path=plugins/proactive`
   服务器表情管理：`repo=https://github.com/qqqyyyhhh8-del/discord-bot-plugins.git`，`path=plugins/emoji`
 
 安装后会自动注册对应的 `/persona`、`/proactive`、`/emoji` 命令。
+如果配置了 `PLUGIN_MARKET_INDEX_URL`，`/plugin` 面板会显示市场预览，并给出市场主页与提交入口按钮。
 
 ## 环境变量
 | 变量 | 说明 |
@@ -52,6 +56,7 @@
 | `BOT_CONFIG_FILE` | 运行时配置文件路径（默认 `bot_config.json`） |
 | `BOT_COMMAND_GUILD_ID` | 可选，slash 命令注册到指定 guild；不填则注册为全局命令 |
 | `PLUGINS_DIR` | 插件宿主工作目录（默认 `plugins`），其中会保存 `registry.json` 和已安装插件源码 |
+| `PLUGIN_MARKET_INDEX_URL` | 可选，插件市场索引 JSON 地址；配置后 `/plugin` 面板会读取市场信息 |
 
 ## 快速开始
 1. 拉取仓库并进入目录：
@@ -130,6 +135,7 @@
 - 官方样例插件在 `examples/plugins/style-note`。
 - 安装当前仓库内的样例插件：
   在 `/plugin` 面板点击 `安装`，填写 `repo=https://github.com/qqqyyyhhh8-del/discord-.git`，`path=examples/plugins/style-note`
+- 也可以把插件元数据登记到官方插件市场仓库的 `public/index.json`，bot 通过 `PLUGIN_MARKET_INDEX_URL` 读取同一份索引。
 
 ## 许可证
 

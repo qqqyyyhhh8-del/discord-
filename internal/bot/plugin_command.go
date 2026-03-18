@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"discordbot/internal/pluginhost"
+	"discordbot/internal/pluginmarket"
 	"discordbot/pkg/pluginapi"
 
 	"github.com/bwmarrin/discordgo"
@@ -303,15 +304,16 @@ func (h *Handler) pluginUpgradeModalResponse(plugin pluginhost.InstalledPlugin) 
 func (h *Handler) pluginPanelResponseData(authorID string, location speechLocation, selectedPluginID, notice string) (*discordgo.InteractionResponseData, error) {
 	plugins := h.pluginManager.List()
 	selected, hasSelected := resolveSelectedPlugin(plugins, selectedPluginID)
+	marketIndex, marketError := h.pluginMarketSnapshot()
 
 	return &discordgo.InteractionResponseData{
 		Content:    strings.TrimSpace(notice),
-		Embeds:     []*discordgo.MessageEmbed{buildPluginPanelEmbed(plugins, selected, hasSelected, location, h.runtimeStore.IsSuperAdmin(authorID), notice)},
-		Components: buildPluginPanelComponents(plugins, selected, hasSelected, location, h.runtimeStore.IsAdmin(authorID), h.runtimeStore.IsSuperAdmin(authorID)),
+		Embeds:     []*discordgo.MessageEmbed{buildPluginPanelEmbed(plugins, selected, hasSelected, location, h.runtimeStore.IsSuperAdmin(authorID), notice, marketIndex, marketError)},
+		Components: buildPluginPanelComponents(plugins, selected, hasSelected, location, h.runtimeStore.IsAdmin(authorID), h.runtimeStore.IsSuperAdmin(authorID), marketIndex),
 	}, nil
 }
 
-func buildPluginPanelEmbed(plugins []pluginhost.InstalledPlugin, selected pluginhost.InstalledPlugin, hasSelected bool, location speechLocation, isSuperAdmin bool, notice string) *discordgo.MessageEmbed {
+func buildPluginPanelEmbed(plugins []pluginhost.InstalledPlugin, selected pluginhost.InstalledPlugin, hasSelected bool, location speechLocation, isSuperAdmin bool, notice string, marketIndex pluginmarket.Index, marketError string) *discordgo.MessageEmbed {
 	description := "统一插件管理面板。使用下方选择菜单切换当前插件，再通过按钮完成安装、升级、启用、禁用和当前服务器授权。"
 	if !isSuperAdmin {
 		description += "\n\n你当前不是超级管理员，只能使用刷新、查看、当前服务器 allow/deny。"
@@ -327,6 +329,7 @@ func buildPluginPanelEmbed(plugins []pluginhost.InstalledPlugin, selected plugin
 		{Name: "当前位置", Value: pluginLocationLabel(location), Inline: false},
 		{Name: fmt.Sprintf("插件列表预览 (%d)", len(plugins)), Value: pluginListPreviewValue(plugins), Inline: false},
 	}
+	fields = append(fields, pluginMarketFields(marketIndex, marketError)...)
 
 	if hasSelected {
 		fields = append(fields,
@@ -369,7 +372,7 @@ func buildPluginPanelEmbed(plugins []pluginhost.InstalledPlugin, selected plugin
 	}
 }
 
-func buildPluginPanelComponents(plugins []pluginhost.InstalledPlugin, selected pluginhost.InstalledPlugin, hasSelected bool, location speechLocation, isAdmin, isSuperAdmin bool) []discordgo.MessageComponent {
+func buildPluginPanelComponents(plugins []pluginhost.InstalledPlugin, selected pluginhost.InstalledPlugin, hasSelected bool, location speechLocation, isAdmin, isSuperAdmin bool, marketIndex pluginmarket.Index) []discordgo.MessageComponent {
 	selectedID := ""
 	if hasSelected {
 		selectedID = selected.ID
@@ -435,6 +438,9 @@ func buildPluginPanelComponents(plugins []pluginhost.InstalledPlugin, selected p
 
 	if selectRow := buildPluginSelectRow(plugins, selectedID, isAdmin); selectRow != nil {
 		components = append(components, selectRow)
+	}
+	if marketRow := buildPluginMarketLinkRow(marketIndex); marketRow != nil {
+		components = append(components, marketRow)
 	}
 	return components
 }
@@ -545,6 +551,103 @@ func pluginListPreviewValue(plugins []pluginhost.InstalledPlugin) string {
 		lines = append(lines, fmt.Sprintf("… 还有 %d 个未展开", len(plugins)-pluginListPreviewLimit))
 	}
 	return strings.Join(lines, "\n")
+}
+
+func pluginMarketFields(index pluginmarket.Index, loadError string) []*discordgo.MessageEmbedField {
+	if strings.TrimSpace(index.IndexURL) == "" && len(index.Plugins) == 0 && strings.TrimSpace(loadError) == "" {
+		return []*discordgo.MessageEmbedField{
+			{
+				Name:   "插件市场",
+				Value:  "当前未配置 `PLUGIN_MARKET_INDEX_URL`，bot 还不会读取外部插件市场索引。",
+				Inline: false,
+			},
+		}
+	}
+
+	name := firstNonEmpty(strings.TrimSpace(index.Title), "Plugin Market")
+	source := firstNonEmpty(codeValue(index.IndexURL), "未提供")
+	updatedAt := firstNonEmpty(codeValue(index.UpdatedAt), "未知")
+	fields := []*discordgo.MessageEmbedField{
+		{
+			Name:   "插件市场",
+			Value:  fmt.Sprintf("名称: %s\n来源: %s\n上架插件: `%d`\n更新时间: %s", codeValue(name), source, len(index.Plugins), updatedAt),
+			Inline: false,
+		},
+	}
+
+	if strings.TrimSpace(loadError) != "" {
+		fields = append(fields, &discordgo.MessageEmbedField{
+			Name:   "市场读取错误",
+			Value:  "```text\n" + truncateRunes(loadError, pluginErrorPreview) + "\n```",
+			Inline: false,
+		})
+		return fields
+	}
+
+	if len(index.Plugins) == 0 {
+		fields = append(fields, &discordgo.MessageEmbedField{
+			Name:   "市场预览",
+			Value:  "市场索引已连通，但当前还没有任何上架插件。",
+			Inline: false,
+		})
+		return fields
+	}
+
+	lines := make([]string, 0, minInt(len(index.Plugins), pluginListPreviewLimit)+1)
+	for i, entry := range index.Plugins {
+		if i >= pluginListPreviewLimit {
+			break
+		}
+		badges := make([]string, 0, 2)
+		if entry.Official {
+			badges = append(badges, "官方")
+		}
+		if entry.Verified {
+			badges = append(badges, "已验证")
+		}
+		label := entry.Name
+		if strings.TrimSpace(label) == "" {
+			label = entry.ID
+		}
+		suffix := ""
+		if len(badges) > 0 {
+			suffix = " [" + strings.Join(badges, " / ") + "]"
+		}
+		lines = append(lines, fmt.Sprintf("• %s%s\n  %s", label, suffix, truncateRunes(singleLine(entry.Description), 120)))
+	}
+	if len(index.Plugins) > pluginListPreviewLimit {
+		lines = append(lines, fmt.Sprintf("… 还有 %d 个未展开", len(index.Plugins)-pluginListPreviewLimit))
+	}
+	fields = append(fields, &discordgo.MessageEmbedField{
+		Name:   "市场预览",
+		Value:  strings.Join(lines, "\n"),
+		Inline: false,
+	})
+	return fields
+}
+
+func buildPluginMarketLinkRow(index pluginmarket.Index) discordgo.MessageComponent {
+	siteURL := strings.TrimSpace(index.SiteURL)
+	submitURL := strings.TrimSpace(index.SubmitURL)
+	buttons := make([]discordgo.MessageComponent, 0, 2)
+	if siteURL != "" {
+		buttons = append(buttons, discordgo.Button{
+			Label: "市场主页",
+			Style: discordgo.LinkButton,
+			URL:   siteURL,
+		})
+	}
+	if submitURL != "" {
+		buttons = append(buttons, discordgo.Button{
+			Label: "提交插件",
+			Style: discordgo.LinkButton,
+			URL:   submitURL,
+		})
+	}
+	if len(buttons) == 0 {
+		return nil
+	}
+	return discordgo.ActionsRow{Components: buttons}
 }
 
 func pluginSelectedSummary(plugin pluginhost.InstalledPlugin, guildID string) string {
