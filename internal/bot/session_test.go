@@ -2,6 +2,7 @@ package bot
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"reflect"
@@ -33,6 +34,83 @@ func TestPromptContentForMessageIgnoresUnmentionedGuildMessages(t *testing.T) {
 	content, ok := promptContentForMessage(session, message)
 	if ok {
 		t.Fatalf("expected guild message without mention to be ignored, got %q", content)
+	}
+}
+
+func TestSyncApplicationCommandsGuildScopeOverwritesBeforeCleanup(t *testing.T) {
+	type call struct {
+		scope string
+		count int
+	}
+	var calls []call
+	commands := []*discordgo.ApplicationCommand{
+		{Name: "help", Description: "help"},
+		{Name: "plugin", Description: "plugin"},
+	}
+
+	err := syncApplicationCommands(func(scope string, commands []*discordgo.ApplicationCommand) error {
+		calls = append(calls, call{
+			scope: scope,
+			count: len(commands),
+		})
+		return nil
+	}, "guild-1", commands)
+	if err != nil {
+		t.Fatalf("syncApplicationCommands: %v", err)
+	}
+	if !reflect.DeepEqual(calls, []call{
+		{scope: "guild-1", count: 2},
+		{scope: "", count: 0},
+	}) {
+		t.Fatalf("unexpected overwrite calls: %#v", calls)
+	}
+}
+
+func TestSyncApplicationCommandsGlobalScopeDoesNotPreclear(t *testing.T) {
+	type call struct {
+		scope string
+		count int
+	}
+	var calls []call
+	commands := []*discordgo.ApplicationCommand{
+		{Name: "help", Description: "help"},
+	}
+
+	err := syncApplicationCommands(func(scope string, commands []*discordgo.ApplicationCommand) error {
+		calls = append(calls, call{
+			scope: scope,
+			count: len(commands),
+		})
+		return nil
+	}, "", commands)
+	if err != nil {
+		t.Fatalf("syncApplicationCommands: %v", err)
+	}
+	if !reflect.DeepEqual(calls, []call{
+		{scope: "", count: 1},
+	}) {
+		t.Fatalf("unexpected overwrite calls: %#v", calls)
+	}
+}
+
+func TestSyncApplicationCommandsKeepsCurrentCommandsWhenPrimaryOverwriteFails(t *testing.T) {
+	expectedErr := errors.New("boom")
+	var calls int
+
+	err := syncApplicationCommands(func(scope string, commands []*discordgo.ApplicationCommand) error {
+		calls++
+		if scope != "guild-1" {
+			t.Fatalf("unexpected cleanup after primary failure: %q", scope)
+		}
+		return expectedErr
+	}, "guild-1", []*discordgo.ApplicationCommand{
+		{Name: "help", Description: "help"},
+	})
+	if !errors.Is(err, expectedErr) {
+		t.Fatalf("expected %v, got %v", expectedErr, err)
+	}
+	if calls != 1 {
+		t.Fatalf("expected 1 overwrite call, got %d", calls)
 	}
 }
 

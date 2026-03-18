@@ -625,16 +625,6 @@ func (s *Session) registerCommands() error {
 		return err
 	}
 
-	scopes := []string{""}
-	if strings.TrimSpace(s.commandGuildID) != "" {
-		scopes = append(scopes, s.commandGuildID)
-	}
-	for _, scope := range scopes {
-		if _, err := s.session.ApplicationCommandBulkOverwrite(appID, scope, []*discordgo.ApplicationCommand{}); err != nil {
-			return err
-		}
-	}
-
 	pluginCommands := []*discordgo.ApplicationCommand{}
 	if s.handler != nil && s.handler.pluginManager != nil {
 		pluginCommands, err = s.handler.pluginManager.ApplicationCommands()
@@ -643,8 +633,25 @@ func (s *Session) registerCommands() error {
 		}
 	}
 
-	_, err = s.session.ApplicationCommandBulkOverwrite(appID, s.commandGuildID, slashCommands(pluginCommands))
-	return err
+	commands := slashCommands(pluginCommands)
+	return syncApplicationCommands(func(scope string, commands []*discordgo.ApplicationCommand) error {
+		_, err := s.session.ApplicationCommandBulkOverwrite(appID, scope, commands)
+		return err
+	}, s.commandGuildID, commands)
+}
+
+func syncApplicationCommands(overwrite func(scope string, commands []*discordgo.ApplicationCommand) error, commandGuildID string, commands []*discordgo.ApplicationCommand) error {
+	targetScope := strings.TrimSpace(commandGuildID)
+	if err := overwrite(targetScope, commands); err != nil {
+		return err
+	}
+	if targetScope == "" {
+		return nil
+	}
+	if err := overwrite("", []*discordgo.ApplicationCommand{}); err != nil {
+		log.Printf("cleanup stale global commands failed: %v", err)
+	}
+	return nil
 }
 
 func (s *Session) applicationID() (string, error) {
