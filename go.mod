@@ -4,7 +4,7 @@ go 1.24.0
 
 require (
 	github.com/asg017/sqlite-vec-go-bindings v0.1.6
-	github.com/bwmarrin/discordgo v0.28.1
+	github.com/bwmarrin/discordgo v0.29.0
 	github.com/mattn/go-sqlite3 v1.14.33
 )
 
