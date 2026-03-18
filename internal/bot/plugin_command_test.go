@@ -1,6 +1,7 @@
 package bot
 
 import (
+	"encoding/json"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -97,9 +98,13 @@ func TestBuildPluginPanelComponentsDisablesPrivilegedActionsForAdmin(t *testing.
 	}
 
 	install := row1.Components[0].(discordgo.Button)
-	refresh := row1.Components[3].(discordgo.Button)
+	configButton := row1.Components[2].(discordgo.Button)
+	refresh := row1.Components[4].(discordgo.Button)
 	if install.Disabled {
 		t.Fatal("expected install button to stay enabled for admin")
+	}
+	if !configButton.Disabled {
+		t.Fatal("expected config button to be disabled without config schema")
 	}
 	if refresh.Disabled {
 		t.Fatal("expected refresh button to stay enabled")
@@ -112,6 +117,72 @@ func TestBuildPluginPanelComponentsDisablesPrivilegedActionsForAdmin(t *testing.
 	}
 	if allowHere.Disabled {
 		t.Fatal("expected allow_here button to stay enabled for admin in guild")
+	}
+}
+
+func TestBuildPluginPanelComponentsEnablesConfigForSchemaPlugin(t *testing.T) {
+	plugin := pluginhost.InstalledPlugin{
+		ID:      "community_plugin",
+		Name:    "Community Plugin",
+		Version: "v0.1.0",
+		Enabled: true,
+		Manifest: pluginapi.Manifest{
+			ConfigSchema: json.RawMessage(`{
+  "type": "object",
+  "properties": {
+    "note": {"type": "string", "title": "Note"}
+  }
+}`),
+		},
+	}
+
+	components := buildPluginPanelComponents([]pluginhost.InstalledPlugin{plugin}, plugin, true, speechLocation{
+		GuildID: "guild-1",
+	}, true, true)
+	row1 := components[0].(discordgo.ActionsRow)
+	configButton := row1.Components[2].(discordgo.Button)
+	if configButton.Disabled {
+		t.Fatal("expected config button to be enabled for schema plugin")
+	}
+}
+
+func TestPluginConfigJSONFromModalParsesPrimitiveTypes(t *testing.T) {
+	schema := pluginhost.ConfigSchema{
+		Properties: []pluginhost.ConfigProperty{
+			{Name: "note", Type: "string", Required: true},
+			{Name: "threshold", Type: "integer"},
+			{Name: "enabled", Type: "boolean"},
+		},
+	}
+	components := []discordgo.MessageComponent{
+		discordgo.ActionsRow{Components: []discordgo.MessageComponent{
+			discordgo.TextInput{CustomID: pluginConfigFieldCustomID("note"), Value: "hello"},
+		}},
+		discordgo.ActionsRow{Components: []discordgo.MessageComponent{
+			discordgo.TextInput{CustomID: pluginConfigFieldCustomID("threshold"), Value: "3"},
+		}},
+		discordgo.ActionsRow{Components: []discordgo.MessageComponent{
+			discordgo.TextInput{CustomID: pluginConfigFieldCustomID("enabled"), Value: "true"},
+		}},
+	}
+
+	payload, err := pluginConfigJSONFromModal(schema, components)
+	if err != nil {
+		t.Fatalf("pluginConfigJSONFromModal: %v", err)
+	}
+
+	var parsed map[string]any
+	if err := json.Unmarshal(payload, &parsed); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	if parsed["note"] != "hello" {
+		t.Fatalf("unexpected note: %#v", parsed["note"])
+	}
+	if parsed["enabled"] != true {
+		t.Fatalf("unexpected enabled: %#v", parsed["enabled"])
+	}
+	if parsed["threshold"] != float64(3) {
+		t.Fatalf("unexpected threshold: %#v", parsed["threshold"])
 	}
 }
 

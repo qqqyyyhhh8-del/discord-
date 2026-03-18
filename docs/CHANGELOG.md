@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## v0.6.3 - 2026-03-18
+
+### Added
+
+- Added plugin-host storage key listing and deletion APIs so plugins can manage their own persisted state more cleanly.
+- Added schema parsing, validation, and normalization for plugin `config_schema`, including default value application and unknown-field rejection.
+- Added a generic `/plugin` configuration modal that renders basic object schemas with up to five primitive fields.
+- Added tests covering config schema validation, storage list/delete handlers, and plugin panel config interactions.
+
+### Changed
+
+- The `/plugin` panel now shows whether the selected plugin exposes configurable fields and lets admins open the configuration modal directly.
+- Updated the Chinese and English plugin authoring guides to document `config_schema`, plugin config persistence, and the new storage APIs.
+- Bumped the host version to `v0.6.3`.
+
 ## v0.6.2 - 2026-03-18
 
 ### Changed

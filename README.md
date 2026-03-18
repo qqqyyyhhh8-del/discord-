@@ -2,7 +2,7 @@
 
 [简体中文](README.md) | [English](docs/README.en.md) | [插件编写指南](docs/PLUGIN_GUIDE.md) | [更新记录](docs/CHANGELOG.md)
 
-当前版本：`v0.6.2`  
+当前版本：`v0.6.3`  
 更新记录见 [docs/CHANGELOG.md](docs/CHANGELOG.md)
 
 这是一个基于 Go + Discordgo 的聊天机器人示例，具备：

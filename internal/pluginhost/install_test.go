@@ -12,7 +12,7 @@ func TestInstallFromGitReplacesOrphanedPluginDirectory(t *testing.T) {
 	repoDir := createPluginGitRepo(t, "demo", "Demo Plugin")
 	pluginsDir := filepath.Join(t.TempDir(), "plugins")
 
-	manager, err := NewManager(Config{PluginsDir: pluginsDir, HostVersion: "v0.6.2"})
+	manager, err := NewManager(Config{PluginsDir: pluginsDir, HostVersion: "v0.6.3"})
 	if err != nil {
 		t.Fatalf("new manager: %v", err)
 	}

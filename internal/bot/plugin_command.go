@@ -2,7 +2,9 @@ package bot
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -23,10 +25,12 @@ const (
 	pluginActionAllowHere   = "allow-here"
 	pluginActionDenyHere    = "deny-here"
 	pluginActionOpenUpgrade = "open-upgrade"
+	pluginActionOpenConfig  = "open-config"
 	pluginActionRemove      = "remove"
 
 	pluginModalInstall = "modal-install"
 	pluginModalUpgrade = "modal-upgrade"
+	pluginModalConfig  = "modal-config"
 
 	pluginModalFieldRepo = "plugin:field-repo"
 	pluginModalFieldRef  = "plugin:field-ref"
@@ -97,6 +101,16 @@ func (h *Handler) PluginComponentResponse(authorID string, location speechLocati
 			return h.pluginPanelUpdateResponse(authorID, location, "", "请先选择一个要升级的插件。")
 		}
 		return h.pluginUpgradeModalResponse(plugin), nil
+	case pluginActionOpenConfig:
+		plugin, ok := findInstalledPlugin(h.pluginManager.List(), selectedPluginID)
+		if !ok {
+			return h.pluginPanelUpdateResponse(authorID, location, "", "请先选择一个要配置的插件。")
+		}
+		response, err := h.pluginConfigModalResponse(plugin)
+		if err != nil {
+			return h.pluginPanelUpdateResponse(authorID, location, selectedPluginID, "打开插件配置失败: "+err.Error())
+		}
+		return response, nil
 	case pluginActionSelect:
 		if len(data.Values) == 0 {
 			return h.pluginPanelUpdateResponse(authorID, location, "", "请选择一个插件。")
@@ -189,6 +203,22 @@ func (h *Handler) PluginModalEdit(ctx context.Context, authorID string, location
 			return h.pluginPanelEdit(authorID, location, selectedPluginID, "升级插件失败: "+err.Error())
 		}
 		return h.pluginPanelEdit(authorID, location, plugin.ID, "插件升级完成，并已刷新命令注册。")
+	case pluginModalConfig:
+		if strings.TrimSpace(selectedPluginID) == "" {
+			return h.pluginPanelEdit(authorID, location, "", "保存插件配置失败: 没有目标插件。")
+		}
+		schema, err := h.pluginManager.ConfigSchema(selectedPluginID)
+		if err != nil {
+			return h.pluginPanelEdit(authorID, location, selectedPluginID, "保存插件配置失败: "+err.Error())
+		}
+		payload, err := pluginConfigJSONFromModal(schema, data.Components)
+		if err != nil {
+			return h.pluginPanelEdit(authorID, location, selectedPluginID, "保存插件配置失败: "+err.Error())
+		}
+		if err := h.pluginManager.SetConfig(selectedPluginID, payload); err != nil {
+			return h.pluginPanelEdit(authorID, location, selectedPluginID, "保存插件配置失败: "+err.Error())
+		}
+		return h.pluginPanelEdit(authorID, location, selectedPluginID, "已保存插件配置。")
 	default:
 		return pluginErrorEdit("未知表单", "未知的插件管理表单。"), nil
 	}
@@ -294,6 +324,41 @@ func (h *Handler) pluginUpgradeModalResponse(plugin pluginhost.InstalledPlugin) 
 	}
 }
 
+func (h *Handler) pluginConfigModalResponse(plugin pluginhost.InstalledPlugin) (*discordgo.InteractionResponse, error) {
+	schema, err := h.pluginManager.ConfigSchema(plugin.ID)
+	if err != nil {
+		return nil, err
+	}
+	if len(schema.Properties) == 0 {
+		return nil, fmt.Errorf("插件没有声明 config_schema")
+	}
+	if len(schema.Properties) > 5 {
+		return nil, fmt.Errorf("当前仅支持最多 5 个配置字段，插件声明了 %d 个", len(schema.Properties))
+	}
+
+	current, _, err := h.pluginManager.ConfigValue(plugin.ID)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := pluginConfigModalComponents(schema, current)
+	if err != nil {
+		return nil, err
+	}
+
+	title := "配置插件: " + plugin.ID
+	if schema.Title != "" {
+		title = schema.Title
+	}
+	return &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseModal,
+		Data: &discordgo.InteractionResponseData{
+			CustomID:   pluginActionCustomID(pluginModalConfig, plugin.ID),
+			Title:      truncateRunes(title, 45),
+			Components: rows,
+		},
+	}, nil
+}
+
 func (h *Handler) pluginPanelResponseData(authorID string, location speechLocation, selectedPluginID, notice string) (*discordgo.InteractionResponseData, error) {
 	plugins := h.pluginManager.List()
 	selected, hasSelected := resolveSelectedPlugin(plugins, selectedPluginID)
@@ -306,7 +371,7 @@ func (h *Handler) pluginPanelResponseData(authorID string, location speechLocati
 }
 
 func buildPluginPanelEmbed(plugins []pluginhost.InstalledPlugin, selected pluginhost.InstalledPlugin, hasSelected bool, location speechLocation, isSuperAdmin bool, notice string) *discordgo.MessageEmbed {
-	description := "统一插件管理面板。使用下方选择菜单切换当前插件，再通过按钮完成安装、升级、启用、禁用和当前服务器授权。"
+	description := "统一插件管理面板。使用下方选择菜单切换当前插件，再通过按钮完成安装、升级、配置、启用、禁用和当前服务器授权。"
 	if !isSuperAdmin {
 		description += "\n\n管理员可以安装插件、查看详情和设置当前服务器授权；升级、启用、禁用、卸载仍然只允许超级管理员执行。"
 	}
@@ -365,8 +430,10 @@ func buildPluginPanelEmbed(plugins []pluginhost.InstalledPlugin, selected plugin
 
 func buildPluginPanelComponents(plugins []pluginhost.InstalledPlugin, selected pluginhost.InstalledPlugin, hasSelected bool, location speechLocation, isAdmin, isSuperAdmin bool) []discordgo.MessageComponent {
 	selectedID := ""
+	configEnabled := false
 	if hasSelected {
 		selectedID = selected.ID
+		configEnabled = pluginSupportsConfig(selected)
 	}
 
 	components := []discordgo.MessageComponent{
@@ -383,6 +450,12 @@ func buildPluginPanelComponents(plugins []pluginhost.InstalledPlugin, selected p
 					Style:    discordgo.PrimaryButton,
 					CustomID: pluginActionCustomID(pluginActionOpenUpgrade, selectedID),
 					Disabled: !isSuperAdmin || !hasSelected,
+				},
+				discordgo.Button{
+					Label:    "配置",
+					Style:    discordgo.SecondaryButton,
+					CustomID: pluginActionCustomID(pluginActionOpenConfig, selectedID),
+					Disabled: !isAdmin || !hasSelected || !configEnabled,
 				},
 				discordgo.Button{
 					Label:    "卸载",
@@ -561,6 +634,9 @@ func pluginSelectedSummary(plugin pluginhost.InstalledPlugin, guildID string) st
 	if strings.TrimSpace(plugin.SourcePath) != "" {
 		lines = append(lines, "路径: "+codeValue(plugin.SourcePath))
 	}
+	if configSummary := pluginConfigSummary(plugin); configSummary != "" {
+		lines = append(lines, "配置: "+configSummary)
+	}
 	if strings.TrimSpace(plugin.Description) != "" {
 		lines = append(lines, "说明: "+truncateRunes(singleLine(plugin.Description), pluginDescriptionPreview))
 	}
@@ -669,6 +745,172 @@ func pluginCapabilityList(caps []pluginapi.Capability) string {
 		lines = append(lines, "- `"+strings.TrimSpace(string(cap))+"`")
 	}
 	return truncateRunes(strings.Join(lines, "\n"), pluginCapabilityPreview)
+}
+
+func pluginSupportsConfig(plugin pluginhost.InstalledPlugin) bool {
+	schema, err := pluginhost.ParseConfigSchema(plugin.Manifest.ConfigSchema)
+	return err == nil && len(schema.Properties) > 0 && len(schema.Properties) <= 5
+}
+
+func pluginConfigSummary(plugin pluginhost.InstalledPlugin) string {
+	schema, err := pluginhost.ParseConfigSchema(plugin.Manifest.ConfigSchema)
+	if err != nil {
+		return "schema 无效"
+	}
+	if len(schema.Properties) == 0 {
+		return ""
+	}
+	if len(schema.Properties) > 5 {
+		return fmt.Sprintf("%d 个字段（超出当前面板支持上限 5）", len(schema.Properties))
+	}
+	return fmt.Sprintf("%d 个字段", len(schema.Properties))
+}
+
+func pluginConfigModalComponents(schema pluginhost.ConfigSchema, current json.RawMessage) ([]discordgo.MessageComponent, error) {
+	values := map[string]json.RawMessage{}
+	current = json.RawMessage(strings.TrimSpace(string(current)))
+	if len(current) > 0 && string(current) != "null" {
+		if err := json.Unmarshal(current, &values); err != nil {
+			return nil, err
+		}
+	}
+
+	rows := make([]discordgo.MessageComponent, 0, len(schema.Properties))
+	for _, property := range schema.Properties {
+		value := property.Default
+		if currentValue, ok := values[property.Name]; ok {
+			value = currentValue
+		}
+		valueText, err := pluginConfigDisplayValue(property.Type, value)
+		if err != nil {
+			return nil, fmt.Errorf("配置字段 %s 当前值无效: %w", property.Name, err)
+		}
+		style := discordgo.TextInputShort
+		if property.Type == "string" && (len(valueText) > 80 || len(property.Description) > 70) {
+			style = discordgo.TextInputParagraph
+		}
+		label := firstNonEmpty(strings.TrimSpace(property.Title), strings.TrimSpace(property.Name))
+		rows = append(rows, discordgo.ActionsRow{
+			Components: []discordgo.MessageComponent{
+				discordgo.TextInput{
+					CustomID:    pluginConfigFieldCustomID(property.Name),
+					Label:       truncateRunes(label, 45),
+					Style:       style,
+					Placeholder: truncateRunes(pluginConfigPlaceholder(property), 100),
+					Value:       truncateRunes(valueText, 4000),
+					Required:    property.Required,
+					MaxLength:   4000,
+				},
+			},
+		})
+	}
+	return rows, nil
+}
+
+func pluginConfigJSONFromModal(schema pluginhost.ConfigSchema, components []discordgo.MessageComponent) (json.RawMessage, error) {
+	values := make(map[string]json.RawMessage, len(schema.Properties))
+	for _, property := range schema.Properties {
+		input := modalTextInputValue(components, pluginConfigFieldCustomID(property.Name))
+		raw, hasValue, err := pluginConfigRawValue(property.Type, input)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", firstNonEmpty(strings.TrimSpace(property.Title), property.Name), err)
+		}
+		if hasValue {
+			values[property.Name] = raw
+		}
+	}
+	if len(values) == 0 {
+		return json.RawMessage(`{}`), nil
+	}
+	encoded, err := json.Marshal(values)
+	if err != nil {
+		return nil, err
+	}
+	return encoded, nil
+}
+
+func pluginConfigFieldCustomID(name string) string {
+	return "plugin:config:" + strings.TrimSpace(name)
+}
+
+func pluginConfigPlaceholder(property pluginhost.ConfigProperty) string {
+	typeHint := map[string]string{
+		"string":  "文本",
+		"integer": "整数",
+		"number":  "数字",
+		"boolean": "true / false",
+	}[property.Type]
+	description := strings.TrimSpace(property.Description)
+	if description == "" {
+		return typeHint
+	}
+	if typeHint == "" {
+		return description
+	}
+	return description + " | " + typeHint
+}
+
+func pluginConfigDisplayValue(propertyType string, value json.RawMessage) (string, error) {
+	value = json.RawMessage(strings.TrimSpace(string(value)))
+	if len(value) == 0 {
+		return "", nil
+	}
+	switch propertyType {
+	case "string":
+		var text string
+		if err := json.Unmarshal(value, &text); err != nil {
+			return "", err
+		}
+		return text, nil
+	case "integer", "number":
+		return strings.TrimSpace(string(value)), nil
+	case "boolean":
+		var flag bool
+		if err := json.Unmarshal(value, &flag); err != nil {
+			return "", err
+		}
+		if flag {
+			return "true", nil
+		}
+		return "false", nil
+	default:
+		return "", fmt.Errorf("unsupported config type %s", propertyType)
+	}
+}
+
+func pluginConfigRawValue(propertyType, input string) (json.RawMessage, bool, error) {
+	input = strings.TrimSpace(input)
+	if input == "" {
+		return nil, false, nil
+	}
+	switch propertyType {
+	case "string":
+		payload, err := json.Marshal(input)
+		return payload, true, err
+	case "integer":
+		number, err := strconv.ParseInt(input, 10, 64)
+		if err != nil {
+			return nil, false, fmt.Errorf("必须是整数")
+		}
+		return json.RawMessage(strconv.FormatInt(number, 10)), true, nil
+	case "number":
+		number, err := strconv.ParseFloat(input, 64)
+		if err != nil {
+			return nil, false, fmt.Errorf("必须是数字")
+		}
+		return json.RawMessage(strconv.FormatFloat(number, 'f', -1, 64)), true, nil
+	case "boolean":
+		switch strings.ToLower(input) {
+		case "true", "1", "yes", "y", "on":
+			return json.RawMessage("true"), true, nil
+		case "false", "0", "no", "n", "off":
+			return json.RawMessage("false"), true, nil
+		default:
+			return nil, false, fmt.Errorf("必须是 true 或 false")
+		}
+	default:
+		return nil, false, fmt.Errorf("不支持的配置类型 %s", propertyType)
+	}
 }
 
 func pluginPanelColor(selected pluginhost.InstalledPlugin, hasSelected bool) int {

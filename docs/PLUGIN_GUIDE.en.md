@@ -111,7 +111,7 @@ If you handle components, declare `component_prefixes` in `plugin.json` and keep
 
 Common mappings:
 
-- `plugin.storage`: `StorageGet`, `StorageSet`
+- `plugin.storage`: `StorageGet`, `StorageSet`, `StorageDelete`, `StorageListKeys`
 - `plugin.config.read` / `plugin.config.write`: `ConfigGet`, `ConfigSet`
 - `memory.read`: `MemoryGet`, `MemorySearch`
 - `memory.write`: `MemoryAppend`, `MemorySetSummary`, `MemoryTrimHistory`
@@ -148,8 +148,13 @@ Recommended rule of thumb:
 About `plugin.config`:
 
 - `ConfigSet` stores one full JSON value, not a nested KV map.
-- `config_schema` in `plugin.json` can already document your config shape, but the host does **not yet** auto-validate it or auto-render a config form.
-- For now, treat it as schema metadata for plugin authors and future tooling.
+- The host now validates the basic structure of `config_schema` during install.
+- The `/plugin` panel can now open a generic config form from `config_schema`, but the current host only supports:
+  top-level `type=object`
+  property types `string`, `integer`, `number`, and `boolean`
+  up to 5 fields
+- The host rejects unknown fields and performs basic type validation on save.
+- If your plugin needs nested objects, arrays, enums, or a more complex multi-step UX, the current generic panel is not enough yet; provide a plugin-specific panel instead.
 
 About `memory`:
 

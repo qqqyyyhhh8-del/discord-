@@ -630,6 +630,30 @@ func (m *Manager) registerHostHandlers(process *managedPlugin) {
 		}
 		return struct{}{}, m.registry.StorageSet(process.install.ID, request.Key, request.Value)
 	})
+	process.session.RegisterHandler(pluginapi.MethodHostStorageDelete, func(ctx context.Context, params json.RawMessage) (any, error) {
+		if err := m.requireCapability(process.install, pluginapi.CapabilityPluginStorage); err != nil {
+			return nil, err
+		}
+		var request pluginapi.StorageDeleteRequest
+		if err := json.Unmarshal(params, &request); err != nil {
+			return nil, err
+		}
+		return struct{}{}, m.registry.StorageDelete(process.install.ID, request.Key)
+	})
+	process.session.RegisterHandler(pluginapi.MethodHostStorageList, func(ctx context.Context, params json.RawMessage) (any, error) {
+		if err := m.requireCapability(process.install, pluginapi.CapabilityPluginStorage); err != nil {
+			return nil, err
+		}
+		var request pluginapi.StorageListRequest
+		if err := json.Unmarshal(params, &request); err != nil {
+			return nil, err
+		}
+		keys, err := m.registry.StorageKeys(process.install.ID, request.Prefix)
+		if err != nil {
+			return nil, err
+		}
+		return pluginapi.StorageListResponse{Keys: keys}, nil
+	})
 	process.session.RegisterHandler(pluginapi.MethodHostConfigGet, func(ctx context.Context, params json.RawMessage) (any, error) {
 		if err := m.requireCapability(process.install, pluginapi.CapabilityPluginConfigRead); err != nil {
 			return nil, err

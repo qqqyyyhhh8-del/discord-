@@ -54,6 +54,67 @@ func TestRegisterHostHandlersSupportsPluginConfig(t *testing.T) {
 	}
 }
 
+func TestRegisterHostHandlersSupportsStorageListAndDelete(t *testing.T) {
+	manager, err := NewManager(Config{PluginsDir: filepath.Join(t.TempDir(), "plugins")})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	t.Cleanup(func() { _ = manager.Close() })
+
+	plugin := InstalledPlugin{
+		ID:          "storage_demo",
+		Name:        "Storage Demo",
+		Version:     "v0.1.0",
+		Manifest:    pluginapi.Manifest{ID: "storage_demo", Name: "Storage Demo", Version: "v0.1.0"},
+		Enabled:     true,
+		GrantedCaps: []pluginapi.Capability{pluginapi.CapabilityPluginStorage},
+	}
+	if err := manager.registry.Upsert(plugin); err != nil {
+		t.Fatalf("upsert plugin: %v", err)
+	}
+
+	hostSession, pluginSession, cleanup := newRPCSessionPair(t)
+	defer cleanup()
+
+	manager.registerHostHandlers(&managedPlugin{install: plugin, session: hostSession})
+
+	if err := pluginSession.Call(context.Background(), pluginapi.MethodHostStorageSet, pluginapi.StorageSetRequest{
+		Key:   "cache:first",
+		Value: json.RawMessage(`{"seen":true}`),
+	}, nil); err != nil {
+		t.Fatalf("storage set first: %v", err)
+	}
+	if err := pluginSession.Call(context.Background(), pluginapi.MethodHostStorageSet, pluginapi.StorageSetRequest{
+		Key:   "state:second",
+		Value: json.RawMessage(`{"value":2}`),
+	}, nil); err != nil {
+		t.Fatalf("storage set second: %v", err)
+	}
+
+	var list pluginapi.StorageListResponse
+	if err := pluginSession.Call(context.Background(), pluginapi.MethodHostStorageList, pluginapi.StorageListRequest{
+		Prefix: "cache:",
+	}, &list); err != nil {
+		t.Fatalf("storage list: %v", err)
+	}
+	if len(list.Keys) != 1 || list.Keys[0] != "cache:first" {
+		t.Fatalf("unexpected storage keys: %#v", list.Keys)
+	}
+
+	if err := pluginSession.Call(context.Background(), pluginapi.MethodHostStorageDelete, pluginapi.StorageDeleteRequest{
+		Key: "cache:first",
+	}, nil); err != nil {
+		t.Fatalf("storage delete: %v", err)
+	}
+
+	if err := pluginSession.Call(context.Background(), pluginapi.MethodHostStorageList, pluginapi.StorageListRequest{}, &list); err != nil {
+		t.Fatalf("storage list all: %v", err)
+	}
+	if len(list.Keys) != 1 || list.Keys[0] != "state:second" {
+		t.Fatalf("unexpected storage keys after delete: %#v", list.Keys)
+	}
+}
+
 func TestRegisterHostHandlersSupportsMemoryReadWrite(t *testing.T) {
 	store := memory.NewStore(func(ctx context.Context, input string) ([]float64, error) {
 		return []float64{1, 0, 0}, nil

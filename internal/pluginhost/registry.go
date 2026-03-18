@@ -309,6 +309,36 @@ func (r *Registry) StorageSet(pluginID, key string, value json.RawMessage) error
 	})
 }
 
+func (r *Registry) StorageDelete(pluginID, key string) error {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return errors.New("storage key is required")
+	}
+	return r.mutate(pluginID, func(plugin *InstalledPlugin) {
+		delete(plugin.Storage, key)
+	})
+}
+
+func (r *Registry) StorageKeys(pluginID, prefix string) ([]string, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	plugin, ok := r.data.Plugins[strings.TrimSpace(pluginID)]
+	if !ok {
+		return nil, errors.New("plugin not found")
+	}
+	prefix = strings.TrimSpace(prefix)
+	keys := make([]string, 0, len(plugin.Storage))
+	for key := range plugin.Storage {
+		if prefix != "" && !strings.HasPrefix(key, prefix) {
+			continue
+		}
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys, nil
+}
+
 func (r *Registry) AllowsGuild(plugin InstalledPlugin, guildID string) bool {
 	if !plugin.Enabled {
 		return false

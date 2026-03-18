@@ -450,16 +450,26 @@ func personaPromptPreview(prompt string) string {
 
 func modalTextInputValue(components []discordgo.MessageComponent, customID string) string {
 	for _, component := range components {
-		row, ok := component.(*discordgo.ActionsRow)
-		if !ok {
+		var rowComponents []discordgo.MessageComponent
+		switch row := component.(type) {
+		case discordgo.ActionsRow:
+			rowComponents = row.Components
+		case *discordgo.ActionsRow:
+			rowComponents = row.Components
+		default:
 			continue
 		}
-		for _, child := range row.Components {
-			input, ok := child.(*discordgo.TextInput)
-			if !ok || input.CustomID != customID {
-				continue
+		for _, child := range rowComponents {
+			switch input := child.(type) {
+			case discordgo.TextInput:
+				if input.CustomID == customID {
+					return strings.TrimSpace(input.Value)
+				}
+			case *discordgo.TextInput:
+				if input.CustomID == customID {
+					return strings.TrimSpace(input.Value)
+				}
 			}
-			return strings.TrimSpace(input.Value)
 		}
 	}
 	return ""

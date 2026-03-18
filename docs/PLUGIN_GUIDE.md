@@ -119,7 +119,7 @@ func main() {
 
 常用能力对照：
 
-- `plugin.storage`：`StorageGet` / `StorageSet`
+- `plugin.storage`：`StorageGet` / `StorageSet` / `StorageDelete` / `StorageListKeys`
 - `plugin.config.read` / `plugin.config.write`：`ConfigGet` / `ConfigSet`
 - `memory.read`：`MemoryGet` / `MemorySearch`
 - `memory.write`：`MemoryAppend` / `MemorySetSummary` / `MemoryTrimHistory`
@@ -157,8 +157,13 @@ func main() {
 关于 `plugin.config`：
 
 - `ConfigSet` 保存的是**整块 JSON 值**，不是 KV 子项。
-- `plugin.json` 里的 `config_schema` 字段现在可以作为插件自己的 schema 说明，但宿主**暂未自动校验或自动渲染配置表单**。
-- 也就是说，schema 目前是给插件作者、面板和未来扩展预留的元数据，不是强校验器。
+- 宿主现在会在安装阶段校验 `config_schema` 的基础结构。
+- `/plugin` 面板现在可以根据 `config_schema` 打开通用配置表单，但当前只支持：
+  顶层 `type=object`
+  属性类型为 `string` / `integer` / `number` / `boolean`
+  最多 5 个字段
+- 宿主会拒绝未知字段，并在保存时做基础类型校验。
+- 如果你需要更复杂的 schema（嵌套对象、数组、enum、多步表单），当前版本还不支持，建议插件自己提供专用面板。
 
 关于 `memory`：
 

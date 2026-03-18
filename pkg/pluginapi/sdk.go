@@ -21,6 +21,8 @@ const (
 
 	MethodHostStorageGet       = "host.storage.get"
 	MethodHostStorageSet       = "host.storage.set"
+	MethodHostStorageDelete    = "host.storage.delete"
+	MethodHostStorageList      = "host.storage.list"
 	MethodHostConfigGet        = "host.config.get"
 	MethodHostConfigSet        = "host.config.set"
 	MethodHostMemoryGet        = "host.memory.get"
@@ -112,6 +114,18 @@ func (c *HostClient) StorageSet(ctx context.Context, key string, value any) erro
 		return err
 	}
 	return c.session.Call(ctx, MethodHostStorageSet, StorageSetRequest{Key: key, Value: payload}, nil)
+}
+
+func (c *HostClient) StorageDelete(ctx context.Context, key string) error {
+	return c.session.Call(ctx, MethodHostStorageDelete, StorageDeleteRequest{Key: key}, nil)
+}
+
+func (c *HostClient) StorageListKeys(ctx context.Context, prefix string) ([]string, error) {
+	var response StorageListResponse
+	if err := c.session.Call(ctx, MethodHostStorageList, StorageListRequest{Prefix: prefix}, &response); err != nil {
+		return nil, err
+	}
+	return response.Keys, nil
 }
 
 func (c *HostClient) ConfigGet(ctx context.Context, target any) (bool, error) {

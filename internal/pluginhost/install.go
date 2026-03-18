@@ -192,6 +192,38 @@ func (m *Manager) Permissions(pluginID string) ([]pluginapi.Capability, error) {
 	return append([]pluginapi.Capability(nil), plugin.GrantedCaps...), nil
 }
 
+func (m *Manager) ConfigSchema(pluginID string) (ConfigSchema, error) {
+	plugin, ok := m.registry.Get(pluginID)
+	if !ok {
+		return ConfigSchema{}, errors.New("plugin not found")
+	}
+	return ParseConfigSchema(plugin.Manifest.ConfigSchema)
+}
+
+func (m *Manager) ConfigValue(pluginID string) (json.RawMessage, bool, error) {
+	if _, ok := m.registry.Get(pluginID); !ok {
+		return nil, false, errors.New("plugin not found")
+	}
+	value, ok := m.registry.ConfigGet(pluginID)
+	return value, ok, nil
+}
+
+func (m *Manager) SetConfig(pluginID string, value json.RawMessage) error {
+	plugin, ok := m.registry.Get(pluginID)
+	if !ok {
+		return errors.New("plugin not found")
+	}
+	schema, err := ParseConfigSchema(plugin.Manifest.ConfigSchema)
+	if err != nil {
+		return err
+	}
+	normalized, err := ValidateAndNormalizeConfig(schema, value)
+	if err != nil {
+		return err
+	}
+	return m.registry.ConfigSet(pluginID, normalized)
+}
+
 func (m *Manager) refreshCommands() error {
 	m.mu.RLock()
 	refresh := m.refreshCommandsFn
@@ -254,6 +286,9 @@ func (m *Manager) cloneManifest(ctx context.Context, repo, ref, sourcePath strin
 }
 
 func (m *Manager) validateManifest(manifest pluginapi.Manifest, excludingPluginID string) error {
+	if err := validateManifestConfigSchema(manifest); err != nil {
+		return err
+	}
 	for _, command := range manifest.Commands {
 		if _, ok := m.reservedCommands[command.Name]; ok {
 			return fmt.Errorf("plugin command conflicts with core command: %s", command.Name)

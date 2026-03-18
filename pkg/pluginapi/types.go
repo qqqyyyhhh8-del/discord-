@@ -420,6 +420,18 @@ type StorageSetRequest struct {
 	Value json.RawMessage `json:"value"`
 }
 
+type StorageDeleteRequest struct {
+	Key string `json:"key"`
+}
+
+type StorageListRequest struct {
+	Prefix string `json:"prefix,omitempty"`
+}
+
+type StorageListResponse struct {
+	Keys []string `json:"keys,omitempty"`
+}
+
 type ConfigGetResponse struct {
 	Found bool            `json:"found"`
 	Value json.RawMessage `json:"value,omitempty"`

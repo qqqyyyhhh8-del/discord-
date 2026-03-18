@@ -2,7 +2,7 @@
 
 [简体中文](../README.md) | [English](README.en.md) | [Plugin Guide](PLUGIN_GUIDE.en.md) | [Changelog](CHANGELOG.md)
 
-Current version: `v0.6.2`  
+Current version: `v0.6.3`  
 See [CHANGELOG.md](CHANGELOG.md) for release notes.
 
 This is a Discord bot built with Go + Discordgo. It includes:
