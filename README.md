@@ -28,10 +28,10 @@
 
 ## 官方插件
 - Kizuna 官方插件仓库：[`qqqyyyhhh8-del/discord-bot-plugins`](https://github.com/qqqyyyhhh8-del/discord-bot-plugins)
-- 在 `/plugin` 面板点击 `安装`，然后填写：
-  人设管理：`repo=https://github.com/qqqyyyhhh8-del/discord-bot-plugins.git`，`path=plugins/persona`
-  主动回复：`repo=https://github.com/qqqyyyhhh8-del/discord-bot-plugins.git`，`path=plugins/proactive`
-  服务器表情管理：`repo=https://github.com/qqqyyyhhh8-del/discord-bot-plugins.git`，`path=plugins/emoji`
+- 在 `/plugin` 面板点击 `安装`，把仓库 URL 和子目录分别填到各自输入框：
+  人设管理：仓库填 `https://github.com/qqqyyyhhh8-del/discord-bot-plugins.git`，子目录填 `plugins/persona`
+  主动回复：仓库填 `https://github.com/qqqyyyhhh8-del/discord-bot-plugins.git`，子目录填 `plugins/proactive`
+  服务器表情管理：仓库填 `https://github.com/qqqyyyhhh8-del/discord-bot-plugins.git`，子目录填 `plugins/emoji`
 
 安装后会自动注册对应的 `/persona`、`/proactive`、`/emoji` 命令。
 

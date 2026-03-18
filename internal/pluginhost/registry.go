@@ -158,7 +158,7 @@ func (r *Registry) List() []InstalledPlugin {
 
 	items := make([]InstalledPlugin, 0, len(r.data.Plugins))
 	for _, plugin := range r.data.Plugins {
-		items = append(items, normalizeInstalledPlugin(plugin))
+		items = append(items, normalizeInstalledPluginForDir(plugin, r.dir))
 	}
 	sort.Slice(items, func(i, j int) bool {
 		return items[i].ID < items[j].ID
@@ -174,11 +174,11 @@ func (r *Registry) Get(pluginID string) (InstalledPlugin, bool) {
 	if !ok {
 		return InstalledPlugin{}, false
 	}
-	return normalizeInstalledPlugin(plugin), true
+	return normalizeInstalledPluginForDir(plugin, r.dir), true
 }
 
 func (r *Registry) Upsert(plugin InstalledPlugin) error {
-	plugin = normalizeInstalledPlugin(plugin)
+	plugin = normalizeInstalledPluginForDir(plugin, r.dir)
 	if plugin.ID == "" {
 		return errors.New("plugin id is required")
 	}
@@ -327,7 +327,7 @@ func (r *Registry) mutate(pluginID string, mutateFn func(plugin *InstalledPlugin
 		return errors.New("plugin not found")
 	}
 	mutateFn(&plugin)
-	plugin = normalizeInstalledPlugin(plugin)
+	plugin = normalizeInstalledPluginForDir(plugin, r.dir)
 	r.data.Plugins[pluginID] = plugin
 	return r.persistLocked()
 }
@@ -336,7 +336,7 @@ func (r *Registry) persistLocked() error {
 	if r.data.Plugins == nil {
 		r.data.Plugins = map[string]InstalledPlugin{}
 	}
-	normalizeRegistryData(&r.data)
+	normalizeRegistryDataForDir(&r.data, r.dir)
 	if err := r.ensureSchemaLocked(); err != nil {
 		return err
 	}
@@ -386,7 +386,7 @@ func (r *Registry) loadFromSQLiteLocked() (RegistryData, bool, error) {
 	if err := json.Unmarshal([]byte(payload), &parsed); err != nil {
 		return RegistryData{}, false, err
 	}
-	normalizeRegistryData(&parsed)
+	normalizeRegistryDataForDir(&parsed, r.dir)
 	return parsed, true, nil
 }
 
@@ -417,6 +417,10 @@ func defaultRegistryData() RegistryData {
 }
 
 func normalizeRegistryData(data *RegistryData) {
+	normalizeRegistryDataForDir(data, "")
+}
+
+func normalizeRegistryDataForDir(data *RegistryData, dir string) {
 	if data == nil {
 		return
 	}
@@ -425,7 +429,7 @@ func normalizeRegistryData(data *RegistryData) {
 	}
 	normalized := make(map[string]InstalledPlugin, len(data.Plugins))
 	for _, plugin := range data.Plugins {
-		plugin = normalizeInstalledPlugin(plugin)
+		plugin = normalizeInstalledPluginForDir(plugin, dir)
 		if plugin.ID == "" {
 			continue
 		}
@@ -439,11 +443,11 @@ func normalizeInstalledPlugin(plugin InstalledPlugin) InstalledPlugin {
 	plugin.Name = strings.TrimSpace(plugin.Name)
 	plugin.Version = strings.TrimSpace(plugin.Version)
 	plugin.Description = strings.TrimSpace(plugin.Description)
-	plugin.Repo = strings.TrimSpace(plugin.Repo)
-	plugin.Ref = strings.TrimSpace(plugin.Ref)
-	plugin.SourcePath = strings.TrimSpace(plugin.SourcePath)
+	plugin.Repo = NormalizeLocatorField(plugin.Repo, "repo")
+	plugin.Ref = NormalizeLocatorField(plugin.Ref, "ref")
+	plugin.SourcePath = NormalizeLocatorField(plugin.SourcePath, "path")
 	plugin.RepoDir = strings.TrimSpace(plugin.RepoDir)
-	plugin.PluginSubdir = strings.Trim(strings.TrimSpace(plugin.PluginSubdir), "/")
+	plugin.PluginSubdir = NormalizeLocatorField(plugin.PluginSubdir, "path")
 	plugin.Manifest = plugin.Manifest.Normalize()
 	plugin.GrantedCaps = normalizeCapabilities(plugin.GrantedCaps)
 	plugin.GuildMode = normalizeGuildMode(plugin.GuildMode)
@@ -451,6 +455,21 @@ func normalizeInstalledPlugin(plugin InstalledPlugin) InstalledPlugin {
 	plugin.LastError = strings.TrimSpace(plugin.LastError)
 	if plugin.Storage == nil {
 		plugin.Storage = map[string]json.RawMessage{}
+	}
+	return plugin
+}
+
+func normalizeInstalledPluginForDir(plugin InstalledPlugin, dir string) InstalledPlugin {
+	plugin = normalizeInstalledPlugin(plugin)
+	if plugin.PluginSubdir == "" {
+		plugin.PluginSubdir = plugin.SourcePath
+	}
+	if plugin.SourcePath == "" {
+		plugin.SourcePath = plugin.PluginSubdir
+	}
+	dir = strings.TrimSpace(dir)
+	if dir != "" && plugin.ID != "" {
+		plugin.RepoDir = filepath.Join(dir, reposDirName, plugin.ID)
 	}
 	return plugin
 }

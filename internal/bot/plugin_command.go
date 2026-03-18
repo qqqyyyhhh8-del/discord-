@@ -165,9 +165,9 @@ func (h *Handler) PluginModalEdit(ctx context.Context, authorID string, location
 	action, selectedPluginID := pluginActionParts(data.CustomID)
 	switch action {
 	case pluginModalInstall:
-		repo := modalTextInputValue(data.Components, pluginModalFieldRepo)
-		ref := modalTextInputValue(data.Components, pluginModalFieldRef)
-		path := modalTextInputValue(data.Components, pluginModalFieldPath)
+		repo := pluginhost.NormalizeLocatorField(modalTextInputValue(data.Components, pluginModalFieldRepo), "repo")
+		ref := pluginhost.NormalizeLocatorField(modalTextInputValue(data.Components, pluginModalFieldRef), "ref")
+		path := pluginhost.NormalizeLocatorField(modalTextInputValue(data.Components, pluginModalFieldPath), "path")
 		if strings.TrimSpace(repo) == "" {
 			return h.pluginPanelEdit(authorID, location, "", "安装插件失败: 仓库地址不能为空。")
 		}
@@ -183,7 +183,7 @@ func (h *Handler) PluginModalEdit(ctx context.Context, authorID string, location
 		if strings.TrimSpace(selectedPluginID) == "" {
 			return h.pluginPanelEdit(authorID, location, "", "升级插件失败: 没有目标插件。")
 		}
-		ref := modalTextInputValue(data.Components, pluginModalFieldRef)
+		ref := pluginhost.NormalizeLocatorField(modalTextInputValue(data.Components, pluginModalFieldRef), "ref")
 		plugin, err := h.pluginManager.UpgradeFromGit(ctx, selectedPluginID, ref)
 		if err != nil {
 			return h.pluginPanelEdit(authorID, location, selectedPluginID, "升级插件失败: "+err.Error())
@@ -231,7 +231,7 @@ func (h *Handler) pluginInstallModalResponse() *discordgo.InteractionResponse {
 					Components: []discordgo.MessageComponent{
 						discordgo.TextInput{
 							CustomID:    pluginModalFieldRepo,
-							Label:       "Git 仓库",
+							Label:       "Git 仓库（只填 URL）",
 							Style:       discordgo.TextInputShort,
 							Placeholder: "https://github.com/owner/repo.git",
 							Required:    true,
@@ -256,7 +256,7 @@ func (h *Handler) pluginInstallModalResponse() *discordgo.InteractionResponse {
 					Components: []discordgo.MessageComponent{
 						discordgo.TextInput{
 							CustomID:    pluginModalFieldPath,
-							Label:       "仓库子目录（可选）",
+							Label:       "仓库子目录（只填路径）",
 							Style:       discordgo.TextInputShort,
 							Placeholder: "例如 plugins/persona",
 							Required:    false,

@@ -15,6 +15,10 @@ import (
 )
 
 func (m *Manager) InstallFromGit(ctx context.Context, repo, ref, sourcePath string) (InstalledPlugin, error) {
+	repo = NormalizeLocatorField(repo, "repo")
+	ref = NormalizeLocatorField(ref, "ref")
+	sourcePath = NormalizeLocatorField(sourcePath, "path")
+
 	manifest, repoDir, subdir, err := m.cloneManifest(ctx, repo, ref, sourcePath)
 	if err != nil {
 		return InstalledPlugin{}, err
@@ -68,6 +72,8 @@ func (m *Manager) InstallFromGit(ctx context.Context, repo, ref, sourcePath stri
 }
 
 func (m *Manager) UpgradeFromGit(ctx context.Context, pluginID, ref string) (InstalledPlugin, error) {
+	ref = NormalizeLocatorField(ref, "ref")
+
 	current, ok := m.registry.Get(pluginID)
 	if !ok {
 		return InstalledPlugin{}, errors.New("plugin not found")
@@ -190,9 +196,9 @@ func (m *Manager) refreshCommands() error {
 }
 
 func (m *Manager) cloneManifest(ctx context.Context, repo, ref, sourcePath string) (pluginapi.Manifest, string, string, error) {
-	repo = strings.TrimSpace(repo)
-	ref = strings.TrimSpace(ref)
-	sourcePath = strings.Trim(strings.TrimSpace(sourcePath), "/")
+	repo = NormalizeLocatorField(repo, "repo")
+	ref = NormalizeLocatorField(ref, "ref")
+	sourcePath = NormalizeLocatorField(sourcePath, "path")
 	if repo == "" {
 		return pluginapi.Manifest{}, "", "", errors.New("plugin repo is required")
 	}

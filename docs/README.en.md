@@ -28,10 +28,10 @@ This is a Discord bot built with Go + Discordgo. It includes:
 
 ## Official Plugins
 - Official Kizuna plugin repo: [`qqqyyyhhh8-del/discord-bot-plugins`](https://github.com/qqqyyyhhh8-del/discord-bot-plugins)
-- Open the `/plugin` panel, click `Install`, then fill in:
-  Persona: `repo=https://github.com/qqqyyyhhh8-del/discord-bot-plugins.git`, `path=plugins/persona`
-  Proactive: `repo=https://github.com/qqqyyyhhh8-del/discord-bot-plugins.git`, `path=plugins/proactive`
-  Emoji: `repo=https://github.com/qqqyyyhhh8-del/discord-bot-plugins.git`, `path=plugins/emoji`
+- Open the `/plugin` panel, click `Install`, and put the repository URL and subdirectory into their own fields:
+  Persona: repo `https://github.com/qqqyyyhhh8-del/discord-bot-plugins.git`, path `plugins/persona`
+  Proactive: repo `https://github.com/qqqyyyhhh8-del/discord-bot-plugins.git`, path `plugins/proactive`
+  Emoji: repo `https://github.com/qqqyyyhhh8-del/discord-bot-plugins.git`, path `plugins/emoji`
 
 After installation, the host will register `/persona`, `/proactive`, and `/emoji` automatically.
 

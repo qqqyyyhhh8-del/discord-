@@ -50,6 +50,9 @@ func TestRegistryMigratesLegacyJSONAndPersistsToSQLite(t *testing.T) {
 	if plugin.Name != "Demo Plugin" || !plugin.Enabled {
 		t.Fatalf("unexpected plugin after migration: %#v", plugin)
 	}
+	if plugin.RepoDir != filepath.Join(dir, reposDirName, "demo") {
+		t.Fatalf("expected repo dir to be normalized, got %q", plugin.RepoDir)
+	}
 	value, ok := registry.StorageGet("demo", "state")
 	if !ok {
 		t.Fatal("expected migrated plugin storage")
@@ -85,6 +88,13 @@ func TestRegistryMigratesLegacyJSONAndPersistsToSQLite(t *testing.T) {
 
 	if _, ok := reopened.Get("extra"); !ok {
 		t.Fatal("expected plugin to persist in sqlite")
+	}
+	plugin, ok = reopened.Get("extra")
+	if !ok {
+		t.Fatal("expected reopened plugin")
+	}
+	if plugin.RepoDir != filepath.Join(dir, reposDirName, "extra") {
+		t.Fatalf("expected normalized repo dir after reopen, got %q", plugin.RepoDir)
 	}
 	value, ok = reopened.StorageGet("extra", "config")
 	if !ok {
