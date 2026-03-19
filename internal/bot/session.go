@@ -96,7 +96,9 @@ func NewSession(token, commandGuildID string, handler *Handler) (*Session, error
 				if err != nil {
 					response = pluginErrorInteractionResponse("插件面板打开失败", err.Error())
 				}
-				_ = s.InteractionRespond(i.Interaction, response)
+				if err := s.InteractionRespond(i.Interaction, response); err != nil {
+					log.Printf("plugin panel interaction respond failed: command=%s err=%v", commandData.Name, err)
+				}
 				return
 			}
 			if handler != nil && handler.pluginManager != nil && handler.pluginManager.CanHandleSlashCommand(commandData.Name) {
@@ -107,7 +109,9 @@ func NewSession(token, commandGuildID string, handler *Handler) (*Session, error
 				if err != nil {
 					response = denyPluginErrorInteractionResponse("抱歉，我现在无法处理这个插件命令。")
 				}
-				_ = s.InteractionRespond(i.Interaction, discordInteractionResponseFromPlugin(response))
+				if err := s.InteractionRespond(i.Interaction, discordInteractionResponseFromPlugin(response)); err != nil {
+					log.Printf("plugin slash interaction respond failed: command=%s err=%v", commandData.Name, err)
+				}
 				return
 			}
 
@@ -138,7 +142,9 @@ func NewSession(token, commandGuildID string, handler *Handler) (*Session, error
 				if err != nil {
 					response = pluginErrorInteractionResponse("插件面板处理失败", err.Error())
 				}
-				_ = s.InteractionRespond(i.Interaction, response)
+				if err := s.InteractionRespond(i.Interaction, response); err != nil {
+					log.Printf("plugin panel component respond failed: custom_id=%s err=%v", strings.TrimSpace(componentData.CustomID), err)
+				}
 				return
 			}
 			if handler != nil && handler.pluginManager != nil && handler.pluginManager.CanHandleComponent(componentData.CustomID) {
@@ -149,13 +155,17 @@ func NewSession(token, commandGuildID string, handler *Handler) (*Session, error
 				if err != nil {
 					response = denyPluginErrorInteractionResponse("抱歉，我现在无法处理这个插件交互。")
 				}
-				_ = s.InteractionRespond(i.Interaction, discordInteractionResponseFromPlugin(response))
+				if err := s.InteractionRespond(i.Interaction, discordInteractionResponseFromPlugin(response)); err != nil {
+					log.Printf("plugin component respond failed: custom_id=%s err=%v", strings.TrimSpace(componentData.CustomID), err)
+				}
 				return
 			}
 		case discordgo.InteractionModalSubmit:
 			modalData := i.ModalSubmitData()
 			if isPluginInteractionCustomID(modalData.CustomID) {
-				_ = s.InteractionRespond(i.Interaction, deferredChannelMessageResponse(true))
+				if err := s.InteractionRespond(i.Interaction, deferredChannelMessageResponse(true)); err != nil {
+					log.Printf("plugin panel modal defer failed: custom_id=%s err=%v", strings.TrimSpace(modalData.CustomID), err)
+				}
 				go func(interaction *discordgo.Interaction, userID string, location speechLocation, data discordgo.ModalSubmitInteractionData) {
 					ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 					defer cancel()
@@ -183,7 +193,9 @@ func NewSession(token, commandGuildID string, handler *Handler) (*Session, error
 				if err != nil {
 					response = denyPluginErrorInteractionResponse("抱歉，我现在无法处理这个插件表单。")
 				}
-				_ = s.InteractionRespond(i.Interaction, discordInteractionResponseFromPlugin(response))
+				if err := s.InteractionRespond(i.Interaction, discordInteractionResponseFromPlugin(response)); err != nil {
+					log.Printf("plugin modal respond failed: custom_id=%s err=%v", strings.TrimSpace(modalData.CustomID), err)
+				}
 				return
 			}
 		}
